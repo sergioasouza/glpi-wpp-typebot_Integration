@@ -25,31 +25,38 @@
 
 ---
 
-## 2. Arquitetura Final
+## 2. Arquitetura Final (Zero-Trust & Alta Disponibilidade)
 
 ```
                             INTERNET
-                               │
-                          ┌────┴────┐
-                          │  Nginx  │  ← porta 80/443
-                          │ (proxy) │
-                          └────┬────┘
-               ┌───────────────┼───────────────┬──────────────┐
-               │               │               │              │
+                                │
+                          ┌─────┴─────┐
+                          │   Nginx   │  ← porta 80/443 (SSL/WAF básico)
+                          │  (proxy)  │
+                          └─────┬─────┘
+               ┌────────────────┼────────────────┬──────────────┐
+               │                │                │              │
         glpi.dom.com    evolution.dom.com  typebot.dom.com  bot.dom.com
-               │               │               │              │
-               ▼               ▼               ▼              ▼
+               │                │                │              │
+               ▼                ▼                ▼              ▼
        Apache:8888     evolution_api    typebot_builder  typebot_viewer
        (GLPI nativo)   (127.0.0.1:8080) (127.0.0.1:3001) (127.0.0.1:3002)
-                               │               │
-                               │               ▼
-                               │          glpi_proxy ──→ Apache:8888/glpi/apirest.php
-                               │          (127.0.0.1:3003)
-                               │
-                    ┌──────────┼──────────┐
-                    ▼          ▼          ▼
-              evo_postgres  evo_redis  typebot_postgres
-              (rede Docker) (rede Docker) (rede Docker)
+                                │                │              │
+                                └────────────────┼──────────────┘
+                                                 ▼
+        ┌─────────────────────────────────────────────────────────────┐
+        │  glpi_proxy (127.0.0.1:3003)                                │
+        │  - express-rate-limit & helmet                              │
+        │  - Fila persistente (Redis) e Dead Letter Queue (DLQ)       │
+        └────────────────────────┬────────────────────────────────────┘
+                                 │
+                                 ▼
+                     Apache:8888/glpi/apirest.php
+
+          [Redes Isoladas Docker - Menor Privilégio]
+          1. evolution_db_net: evolution_api ↔ evo_postgres / evo_redis
+          2. typebot_db_net: typebots ↔ typebot_postgres
+          3. internal_net: glpi_proxy ↔ typebot / evolution
 ```
 
 ### Mapa de Portas
@@ -63,9 +70,9 @@
 | Typebot Builder | `127.0.0.1:3001` | `3000` | Não |
 | Typebot Viewer | `127.0.0.1:3002` | `3000` | Não |
 | GLPI Proxy | `127.0.0.1:3003` | `3003` | Não |
-| Postgres (Evolution) | — | `5432` | Não (rede Docker) |
-| Postgres (Typebot) | — | `5432` | Não (rede Docker) |
-| Redis | — | `6379` | Não (rede Docker) |
+| Postgres (Evolution) | — | `5432` | Não (evolution_db_net) |
+| Postgres (Typebot) | — | `5432` | Não (typebot_db_net) |
+| Redis | — | `6379` | Não (evolution_db_net) |
 
 ---
 
@@ -73,20 +80,20 @@
 
 ```
 /opt/stack/
-├── docker-compose.yml          ← stack completa (1 comando sobe tudo)
+├── docker-compose.yml          ← stack completa c/ redes isoladas
 ├── .env                        ← variáveis de ambiente (chmod 600)
 ├── glpi-proxy/
-│   ├── Dockerfile              ← build do proxy (não depende de npm no restart)
-│   ├── package.json            ← dependências (apenas express)
-│   └── server.js               ← proxy com fila de retry, auth, auditoria
+│   ├── Dockerfile              ← build do proxy autônomo
+│   ├── package.json            ← dependências (express, helmet, ioredis)
+│   └── server.js               ← proxy (fila no Redis, DLQ, auth, rate-limit)
 ├── nginx/
 │   ├── glpi.conf               ← proxy GLPI → Apache:8888
 │   ├── evolution.conf          ← proxy Evolution API
 │   ├── typebot-builder.conf    ← proxy Typebot Builder
 │   └── typebot-viewer.conf     ← proxy Typebot Viewer
 └── scripts/
-    ├── backup.sh               ← backup diário (bancos + sessão WhatsApp)
-    └── monitor.sh              ← monitoramento (WhatsApp, disco, RAM)
+    ├── backup.sh               ← backup com validação de corrupção (-F c)
+    └── monitor.sh              ← monitoramento auto-recuperável
 ```
 
 ---
@@ -525,9 +532,10 @@ curl -s -o /dev/null -w "%{http_code}" https://bot.seudominio.com/
 | GLPI fora do ar | `curl http://localhost:8888/glpi/` e `systemctl status apache2` | Se Apache morreu: `systemctl restart apache2`. Se Nginx morreu: `systemctl restart nginx`. Se ambos falharam: rollback |
 | WhatsApp desconectou | `curl localhost:8080/instance/connectionState/glpi-bot -H "apikey: ..."` | Acessar `https://evolution.seudominio.com` → reconectar QR |
 | Container não sobe | `docker logs CONTAINER --tail 50` | Verificar `.env`. Reiniciar: `docker compose restart SERVIÇO` |
-| Tickets não criam | `curl localhost:3003/health` → ver `queue.pending` e `session.active` | Se sessão inativa: verificar tokens GLPI. Se fila cheia: GLPI pode estar fora do ar |
+| Tickets não criam | `curl localhost:3003/health` → ver `queue.pending` e `queue.dead_letters` | Se sessão inativa: verificar tokens GLPI. Se dead letters cresce: GLPI está bloqueando permanentemente a API. |
 | Disco cheio | `df -h` e `docker system df` | `docker system prune -f` + `find /opt/backups -mtime +7 -delete` |
-| RAM esgotada | `free -h` e `docker stats --no-stream` | Identificar container consumindo mais e reiniciar: `docker compose restart` |
+| RAM esgotada | `free -h` e `docker stats --no-stream` | Identificar container consumindo mais e reiniciar. Redis tem limite maxmemory configurado. |
+| Proxy não responde (Rate Limit) | `HTTP 429 Too Many Requests` no Typebot | O Proxy está se protegendo contra DDoS. Aguarde 1 min. Pode ajustar em `server.js` se for IP interno. |
 | Nginx deu erro 502 | `nginx -t` e `docker ps` | Container de destino caiu → reiniciar container |
 
 ### Rollback completo (voltar tudo ao estado original)

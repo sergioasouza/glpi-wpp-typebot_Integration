@@ -12,13 +12,21 @@ mkdir -p "$BACKUP_DIR"
 
 echo "$(date): Iniciando backup..."
 
-# Banco Evolution
-docker exec evolution_postgres pg_dump -U evolution_user evolution_db > "$BACKUP_DIR/evolution_db.sql" 2>/dev/null && \
-  echo "  ✅ evolution_db" || echo "  ❌ evolution_db (container off?)"
+# Banco Evolution (Dump com validação de integridade)
+if docker exec evolution_postgres pg_dump -U evolution_user -F c evolution_db > "$BACKUP_DIR/evolution_db.dump" 2>/dev/null && [ -s "$BACKUP_DIR/evolution_db.dump" ]; then
+  echo "  ✅ evolution_db (dump validado)"
+else
+  echo "  ❌ evolution_db (dump corrompido, arquivo vazio ou container off)"
+  rm -f "$BACKUP_DIR/evolution_db.dump"
+fi
 
-# Banco Typebot
-docker exec typebot_postgres pg_dump -U typebot_user typebot_db > "$BACKUP_DIR/typebot_db.sql" 2>/dev/null && \
-  echo "  ✅ typebot_db" || echo "  ❌ typebot_db (container off?)"
+# Banco Typebot (Dump com validação de integridade)
+if docker exec typebot_postgres pg_dump -U typebot_user -F c typebot_db > "$BACKUP_DIR/typebot_db.dump" 2>/dev/null && [ -s "$BACKUP_DIR/typebot_db.dump" ]; then
+  echo "  ✅ typebot_db (dump validado)"
+else
+  echo "  ❌ typebot_db (dump corrompido, arquivo vazio ou container off)"
+  rm -f "$BACKUP_DIR/typebot_db.dump"
+fi
 
 # Sessões Baileys (para não perder conexão WhatsApp)
 docker cp evolution_api:/evolution/instances "$BACKUP_DIR/evolution_instances/" 2>/dev/null && \

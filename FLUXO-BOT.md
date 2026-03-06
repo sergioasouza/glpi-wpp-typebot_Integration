@@ -311,6 +311,19 @@ Se erro (queued = true):
         Deseja fazer mais alguma coisa?"
   → Botões: [ Menu Principal ] [ Encerrar ]
 
+---
+
+## 3. Resiliência e Tratamento de Erros
+
+**Cenário de Queda do GLPI (Offline):**
+1. O usuário tenta abrir o chamado via bot.
+2. O bot envia o payload para o `glpi-proxy`.
+3. O proxy percebe que o GLPI não responde ou retorna erro 500+.
+4. O proxy salva o ticket no **Redis** (fila persistente) e retorna status HTTP 202 (Accepted).
+5. O bot avisa o usuário: *"Nosso sistema está com uma instabilidade momentânea, mas seu chamado está na fila segura. Ele será criado automaticamente assim que o sistema voltar."*
+6. O proxy tenta recriar o ticket a cada minuto. Se falhar 5 vezes, move para o **Dead Letter Queue (DLQ)** no Redis, garantindo que nenhum dado seja perdido e possa ser recuperado manualmente pelo administrador.
+
+---
 Se erro (queued = false):
   BOT: "❌ Ocorreu um erro ao abrir o chamado. Por favor, tente
         novamente em alguns minutos ou entre em contato com o TI

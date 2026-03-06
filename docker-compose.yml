@@ -41,7 +41,7 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
     networks:
-      - stack_network
+      - evolution_db_net
     depends_on:
       evolution-postgres:
         condition: service_healthy
@@ -73,7 +73,7 @@ services:
     volumes:
       - evolution_postgres_data:/var/lib/postgresql/data
     networks:
-      - stack_network
+      - evolution_db_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U evolution_user -d evolution_db"]
       interval: 10s
@@ -96,7 +96,7 @@ services:
     volumes:
       - evolution_redis_data:/data
     networks:
-      - stack_network
+      - evolution_db_net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -127,7 +127,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - stack_network
+      - typebot_db_net
+      - internal_net
     depends_on:
       typebot-postgres:
         condition: service_healthy
@@ -156,7 +157,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - stack_network
+      - typebot_db_net
+      - internal_net
     depends_on:
       typebot-postgres:
         condition: service_healthy
@@ -180,7 +182,7 @@ services:
     volumes:
       - typebot_postgres_data:/var/lib/postgresql/data
     networks:
-      - stack_network
+      - typebot_db_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U typebot_user -d typebot_db"]
       interval: 10s
@@ -212,7 +214,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - stack_network
+      - evolution_db_net
+      - internal_net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
       interval: 30s
@@ -237,6 +240,12 @@ volumes:
 #  REDE ÚNICA (comunicação entre todos os serviços)
 # ═══════════════════════════════════════════════════════════════
 networks:
-  stack_network:
-    name: integration_stack
+  evolution_db_net:
+    name: evolution_db_net
+    driver: bridge
+  typebot_db_net:
+    name: typebot_db_net
+    driver: bridge
+  internal_net:
+    name: internal_net
     driver: bridge
