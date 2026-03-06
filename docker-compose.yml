@@ -1,0 +1,242 @@
+####################################################################
+#  Stack Completa: Evolution API + Typebot + GLPI Proxy
+#  Tudo isolado — ZERO impacto no GLPI existente
+#  Uso: docker compose up -d
+####################################################################
+
+services:
+
+  # ═══════════════════════════════════════════════════════════════
+  #  EVOLUTION API — WhatsApp via Baileys
+  # ═══════════════════════════════════════════════════════════════
+  evolution-api:
+    container_name: evolution_api
+    image: atendai/evolution-api:v2.2.3
+    restart: always
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+    environment:
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_LIMIT=20
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_REDIS_SAVE_INSTANCES=false
+      - CACHE_LOCAL_ENABLED=false
+      - LOG_LEVEL=ERROR,WARN,LOG
+      - LOG_COLOR=true
+      - LOG_BAILEYS=error
+      - DEL_INSTANCE=false
+      - DEL_TEMP_INSTANCES=true
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+      - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+      - WEBHOOK_EVENTS_QRCODE_UPDATED=true
+      - TYPEBOT_ENABLED=true
+      - TYPEBOT_KEEP_OPEN=false
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - stack_network
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  POSTGRES — Evolution API
+  # ═══════════════════════════════════════════════════════════════
+  evolution-postgres:
+    container_name: evolution_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: evolution_db
+      POSTGRES_USER: evolution_user
+      POSTGRES_PASSWORD: ${POSTGRES_EVOLUTION_PASSWORD}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    networks:
+      - stack_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution_user -d evolution_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  REDIS — Cache Evolution API
+  # ═══════════════════════════════════════════════════════════════
+  evolution-redis:
+    container_name: evolution_redis
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - evolution_redis_data:/data
+    networks:
+      - stack_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  TYPEBOT — Builder (painel de administração)
+  # ═══════════════════════════════════════════════════════════════
+  typebot-builder:
+    container_name: typebot_builder
+    image: baptistearno/typebot-builder:2.28
+    restart: always
+    ports:
+      - "127.0.0.1:3001:3000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://typebot_user:${POSTGRES_TYPEBOT_PASSWORD}@typebot-postgres:5432/typebot_db
+      - NEXTAUTH_URL_INTERNAL=http://typebot-builder:3000
+      - DISABLE_TELEMETRY=true
+      - NEXT_TELEMETRY_DISABLED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stack_network
+    depends_on:
+      typebot-postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  TYPEBOT — Viewer (execução dos fluxos)
+  # ═══════════════════════════════════════════════════════════════
+  typebot-viewer:
+    container_name: typebot_viewer
+    image: baptistearno/typebot-viewer:2.28
+    restart: always
+    ports:
+      - "127.0.0.1:3002:3000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://typebot_user:${POSTGRES_TYPEBOT_PASSWORD}@typebot-postgres:5432/typebot_db
+      - NEXTAUTH_URL_INTERNAL=http://typebot-builder:3000
+      - DISABLE_TELEMETRY=true
+      - NEXT_TELEMETRY_DISABLED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stack_network
+    depends_on:
+      typebot-postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  POSTGRES — Typebot
+  # ═══════════════════════════════════════════════════════════════
+  typebot-postgres:
+    container_name: typebot_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: typebot_db
+      POSTGRES_USER: typebot_user
+      POSTGRES_PASSWORD: ${POSTGRES_TYPEBOT_PASSWORD}
+    volumes:
+      - typebot_postgres_data:/var/lib/postgresql/data
+    networks:
+      - stack_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U typebot_user -d typebot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  GLPI PROXY — Micro-serviço de sessão persistente
+  # ═══════════════════════════════════════════════════════════════
+  glpi-proxy:
+    container_name: glpi_proxy
+    build:
+      context: ./glpi-proxy
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "127.0.0.1:3003:3003"
+    environment:
+      GLPI_URL: ${GLPI_API_URL}
+      GLPI_APP_TOKEN: ${GLPI_APP_TOKEN}
+      GLPI_USER_TOKEN: ${GLPI_USER_TOKEN}
+      PROXY_SECRET: ${PROXY_SECRET}
+      NODE_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - stack_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# ═══════════════════════════════════════════════════════════════
+#  VOLUMES PERSISTENTES
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
+  typebot_postgres_data:
+
+# ═══════════════════════════════════════════════════════════════
+#  REDE ÚNICA (comunicação entre todos os serviços)
+# ═══════════════════════════════════════════════════════════════
+networks:
+  stack_network:
+    name: integration_stack
+    driver: bridge

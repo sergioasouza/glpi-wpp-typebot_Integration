@@ -1,0 +1,12 @@
+{
+  "name": "glpi-proxy",
+  "version": "1.0.0",
+  "description": "Micro-servico proxy para sessao persistente GLPI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

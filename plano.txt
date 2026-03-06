@@ -1,0 +1,906 @@
+Vou criar um documento técnico completo para você. Deixa eu primeiro verificar as skills disponíveis para gerar o melhor formato possível.Perfeito. Tenho todas as informações necessárias. Vou criar um guia técnico completo e profissional como documento HTML renderizável.Vou entregar o guia completo diretamente aqui. É extenso e técnico, então vou estruturar tudo de forma organizada.
+
+---
+
+# 📘 Guia Técnico: GLPI + Evolution API (Baileys) + Typebot na Mesma VPS
+
+**Arquitetura:** `WhatsApp → Evolution API (Baileys) → Typebot → GLPI API REST`
+
+---
+
+## ⚠️ Avaliação de Riscos
+
+| Risco | Nível | Mitigação |
+|---|---|---|
+| Conflito de portas com GLPI | 🔴 Alto | Mapear todas as portas antes; containers escutam apenas em `127.0.0.1` |
+| Pressão de RAM | 🔴 Alto | Mínimo 4 GB RAM (ideal 8 GB). Evolution + Typebot + PostgreSQL + Redis = ~1.5–2.5 GB |
+| Bloqueio do WhatsApp | 🟡 Médio | Número dedicado, delays entre mensagens, nunca expor Evolution publicamente |
+| Pressão de disco | 🟡 Médio | Sessões Baileys + logs + volumes crescem. Mínimo 40 GB livres. |
+| Quebrar o GLPI | 🟢 Baixo | Isolamento via Docker + blocos Nginx separados = zero impacto no GLPI existente |
+
+---
+
+## Etapa 1 — Análise do Ambiente Atual
+
+Antes de qualquer mudança, faça este inventário:
+
+```bash
+# Portas em uso no host
+ss -tlnp
+
+# Web server do GLPI
+systemctl status apache2 nginx 2>/dev/null
+nginx -T 2>/dev/null | grep -E "listen|server_name"
+apachectl -S 2>/dev/null
+
+# Recursos disponíveis
+free -h && df -h && nproc
+
+# Docker instalado?
+docker --version && docker compose version
+
+# Onde está o GLPI
+find /var /srv /opt /home -name "glpi" -type d 2>/dev/null
+find / -name "config_db.php" 2>/dev/null | head -5
+```
+
+**O que anotar:** porta do GLPI (80/443), web server (Apache ou Nginx), RAM livre, domínio atual do GLPI.
+
+---
+
+## Etapa 2 — Preparação da VPS
+
+### 2.1 Atualizar sistema e dependências
+```bash
+apt update && apt upgrade -y
+apt install -y curl wget git htop net-tools ufw fail2ban apache2-utils
+```
+
+### 2.2 Instalar Docker
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh
+systemctl enable docker && systemctl start docker
+docker compose version  # verificar plugin v2
+```
+
+### 2.3 Criar registros DNS (no seu provedor)
+
+| Subdomínio | Aponta para |
+|---|---|
+| `glpi.seudominio.com.br` | IP da VPS (já existia) |
+| `evolution.seudominio.com.br` | IP da VPS |
+| `typebot.seudominio.com.br` | IP da VPS |
+| `bot.seudominio.com.br` | IP da VPS |
+
+### 2.4 Firewall
+```bash
+ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp
+# NÃO abrir 8080/3001/3002 — esses são servidos pelo Nginx como proxy
+ufw --force enable
+```
+
+---
+
+## Etapa 3 — Estrutura Docker Isolada
+
+### 3.1 Estrutura de pastas
+```bash
+mkdir -p /opt/stack/{evolution,typebot,glpi-proxy,nginx}
+```
+
+```
+/opt/stack/
+├── evolution/
+│   ├── .env                  ← variáveis de ambiente (chmod 600)
+│   ├── docker-compose.yml
+│   └── instances/            ← volume sessões Baileys
+├── typebot/
+│   ├── .env
+│   └── docker-compose.yml
+├── glpi-proxy/
+│   └── server.js             ← micro-serviço de sessão GLPI
+└── nginx/
+    ├── evolution.conf
+    ├── typebot-builder.conf
+    └── typebot-viewer.conf
+```
+
+---
+
+## Mapa de Portas — Sem Conflito com GLPI
+
+| Serviço | Porta no Host | Porta Container | Externo? |
+|---|---|---|---|
+| GLPI (Apache/Nginx nativo) | `80` / `443` | — | ✅ Já existia |
+| Evolution API | `127.0.0.1:8080` | `8080` | ❌ Só loopback |
+| Typebot Builder | `127.0.0.1:3001` | `3000` | ❌ Só loopback |
+| Typebot Viewer | `127.0.0.1:3002` | `3000` | ❌ Só loopback |
+| GLPI Proxy | `127.0.0.1:3003` | `3003` | ❌ Só loopback |
+| PostgreSQL (Evolution) | sem bind no host | `5432` | ❌ Rede Docker |
+| PostgreSQL (Typebot) | sem bind no host | `5432` | ❌ Rede Docker |
+| Redis | sem bind no host | `6379` | ❌ Rede Docker |
+
+---
+
+## Etapa 4 — Gerar Senhas Seguras
+
+```bash
+# Execute cada linha e anote os outputs para usar nos .env
+openssl rand -hex 32   # → SENHA_POSTGRES_EVOLUTION
+openssl rand -hex 32   # → SENHA_POSTGRES_TYPEBOT
+openssl rand -hex 32   # → EVOLUTION_APIKEY
+openssl rand -hex 32   # → NEXTAUTH_SECRET
+openssl rand -hex 32   # → ENCRYPTION_SECRET
+```
+
+---
+
+## Etapa 5 — Subir Evolution API (Baileys)
+
+### 5.1 `/opt/stack/evolution/.env`
+```bash
+# ── SERVIDOR ──────────────────────────────────────
+SERVER_TYPE=http
+SERVER_PORT=8080
+SERVER_URL=https://evolution.seudominio.com.br
+
+# ── CORS ──────────────────────────────────────────
+CORS_ORIGIN=https://typebot.seudominio.com.br,https://bot.seudominio.com.br
+CORS_METHODS=POST,GET,PUT,DELETE
+CORS_CREDENTIALS=true
+
+# ── AUTENTICAÇÃO ──────────────────────────────────
+AUTHENTICATION_TYPE=apikey
+AUTHENTICATION_API_KEY=SUA_APIKEY_GERADA_ACIMA
+AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+
+# ── BANCO DE DADOS ────────────────────────────────
+DATABASE_PROVIDER=postgresql
+DATABASE_URL=postgresql://evolution_user:SENHA_POSTGRES_EVOLUTION@evolution-postgres:5432/evolution_db
+DATABASE_CONNECTION_LIMIT=20
+DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+
+# ── REDIS ─────────────────────────────────────────
+CACHE_REDIS_ENABLED=true
+CACHE_REDIS_URI=redis://evolution-redis:6379/6
+CACHE_REDIS_PREFIX_KEY=evolution
+CACHE_REDIS_SAVE_INSTANCES=false
+CACHE_LOCAL_ENABLED=false
+
+# ── LOGS ──────────────────────────────────────────
+LOG_LEVEL=ERROR,WARN,LOG,INFO
+LOG_COLOR=true
+LOG_BAILEYS=error
+
+# ── SESSÃO WHATSAPP ───────────────────────────────
+DEL_INSTANCE=false
+DEL_TEMP_INSTANCES=true
+
+# ── WEBHOOKS ──────────────────────────────────────
+WEBHOOK_GLOBAL_ENABLED=false
+WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+WEBHOOK_EVENTS_QRCODE_UPDATED=true
+
+# ── INTEGRAÇÃO TYPEBOT ────────────────────────────
+TYPEBOT_ENABLED=true
+TYPEBOT_KEEP_OPEN=false
+```
+
+### 5.2 `/opt/stack/evolution/docker-compose.yml`
+```yaml
+services:
+
+  evolution-api:
+    container_name: evolution_api
+    image: atendai/evolution-api:v2.2.3
+    restart: always
+    ports:
+      - "127.0.0.1:8080:8080"   # bind APENAS no loopback
+    env_file:
+      - .env
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - evolution_network
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  evolution-postgres:
+    container_name: evolution_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: evolution_db
+      POSTGRES_USER: evolution_user
+      POSTGRES_PASSWORD: SENHA_POSTGRES_EVOLUTION
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    networks:
+      - evolution_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution_user -d evolution_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # SEM porta exposta no host!
+
+  evolution-redis:
+    container_name: evolution_redis
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - evolution_redis_data:/data
+    networks:
+      - evolution_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
+
+networks:
+  evolution_network:
+    name: evolution_network
+    driver: bridge
+```
+
+### 5.3 Subir e conectar WhatsApp
+```bash
+cd /opt/stack/evolution
+docker compose up -d
+docker compose logs -f evolution-api
+
+# Criar instância Baileys
+curl -X POST "http://localhost:8080/instance/create" \
+  -H "Content-Type: application/json" \
+  -H "apikey: SUA_APIKEY_AQUI" \
+  -d '{"instanceName":"glpi-bot","qrcode":true,"integration":"WHATSAPP-BAILEYS"}'
+
+# Obter QR Code
+curl "http://localhost:8080/instance/connect/glpi-bot" \
+  -H "apikey: SUA_APIKEY_AQUI"
+
+# Verificar status
+curl "http://localhost:8080/instance/connectionState/glpi-bot" \
+  -H "apikey: SUA_APIKEY_AQUI"
+# Deve retornar: {"state":"open"}
+```
+
+---
+
+## Etapa 6 — Subir Typebot Self-Hosted
+
+### 6.1 `/opt/stack/typebot/.env`
+```bash
+# ── BANCO ─────────────────────────────────────────
+DATABASE_URL=postgresql://typebot_user:SENHA_POSTGRES_TYPEBOT@typebot-postgres:5432/typebot_db
+
+# ── NEXTAUTH ──────────────────────────────────────
+NEXTAUTH_URL=https://typebot.seudominio.com.br
+NEXTAUTH_URL_INTERNAL=http://typebot-builder:3000
+NEXTAUTH_SECRET=SEU_NEXTAUTH_SECRET_GERADO
+
+# ── VIEWER ────────────────────────────────────────
+NEXT_PUBLIC_VIEWER_URL=https://bot.seudominio.com.br
+
+# ── CRIPTOGRAFIA ──────────────────────────────────
+ENCRYPTION_SECRET=SEU_ENCRYPTION_SECRET_32_CHARS
+
+# ── ADMIN ─────────────────────────────────────────
+ADMIN_EMAIL=admin@seudominio.com.br
+
+# ── SMTP (recomendado) ────────────────────────────
+SMTP_HOST=smtp.seudominio.com.br
+SMTP_PORT=587
+SMTP_USERNAME=noreply@seudominio.com.br
+SMTP_PASSWORD=SENHA_SMTP
+SMTP_SECURE=false
+NEXT_PUBLIC_SMTP_FROM=Typebot <noreply@seudominio.com.br>
+
+# ── TELEMETRIA ────────────────────────────────────
+DISABLE_TELEMETRY=true
+NEXT_TELEMETRY_DISABLED=1
+```
+
+### 6.2 `/opt/stack/typebot/docker-compose.yml`
+```yaml
+services:
+
+  typebot-builder:
+    container_name: typebot_builder
+    image: baptistearno/typebot-builder:latest
+    restart: always
+    ports:
+      - "127.0.0.1:3001:3000"   # bind apenas loopback
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # acesso ao GLPI no host
+    networks:
+      - typebot_network
+    depends_on:
+      typebot-postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  typebot-viewer:
+    container_name: typebot_viewer
+    image: baptistearno/typebot-viewer:latest
+    restart: always
+    ports:
+      - "127.0.0.1:3002:3000"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - typebot_network
+    depends_on:
+      typebot-postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  typebot-postgres:
+    container_name: typebot_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: typebot_db
+      POSTGRES_USER: typebot_user
+      POSTGRES_PASSWORD: SENHA_POSTGRES_TYPEBOT
+    volumes:
+      - typebot_postgres_data:/var/lib/postgresql/data
+    networks:
+      - typebot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U typebot_user -d typebot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  typebot_postgres_data:
+
+networks:
+  typebot_network:
+    name: typebot_network
+    driver: bridge
+```
+
+```bash
+cd /opt/stack/typebot
+docker compose up -d
+docker compose logs -f typebot-builder
+```
+
+---
+
+## Etapa 7 — Rede Interna Docker
+
+```
+HOST (Ubuntu 22.04)
+├── Apache/Nginx nativo → porta 80/443 → GLPI (processo do host)
+│
+├── Docker: evolution_network
+│   ├── evolution_api      (127.0.0.1:8080 no host)
+│   ├── evolution_postgres (apenas dentro da rede)
+│   └── evolution_redis    (apenas dentro da rede)
+│
+└── Docker: typebot_network
+    ├── typebot_builder    (127.0.0.1:3001 no host)
+    ├── typebot_viewer     (127.0.0.1:3002 no host)
+    └── typebot_postgres   (apenas dentro da rede)
+
+Typebot → GLPI: via http://host.docker.internal/glpi/apirest.php
+Evolution → Typebot: via integração nativa da Evolution API v2
+```
+
+```bash
+# Verificar redes
+docker network ls
+docker network inspect evolution_network
+
+# Testar: Typebot Builder acessa o GLPI
+docker exec typebot_builder wget -qO- \
+  "http://host.docker.internal/glpi/apirest.php/" | head -20
+```
+
+---
+
+## Etapa 8 — Nginx Reverse Proxy
+
+> **Se o GLPI usa Apache:** Mova o Apache para a porta 8888 e instale Nginx como front-end. Se o GLPI **já usa Nginx**, apenas adicione os blocos abaixo.
+
+### Cenário A — GLPI usa Apache (preparar o Nginx)
+```bash
+# Mudar Apache para porta 8888
+sed -i 's/Listen 80/Listen 8888/' /etc/apache2/ports.conf
+sed -i 's/:80>/:8888>/' /etc/apache2/sites-enabled/*.conf
+systemctl restart apache2
+
+# Instalar Nginx
+apt install -y nginx
+
+# Criar bloco GLPI no Nginx (proxy para Apache)
+cat > /etc/nginx/sites-available/glpi.conf << 'EOF'
+server {
+    listen 80;
+    server_name glpi.seudominio.com.br;
+    location / {
+        proxy_pass http://127.0.0.1:8888;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+ln -s /etc/nginx/sites-available/glpi.conf /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+```
+
+### Bloco para Evolution API
+```nginx
+# /etc/nginx/sites-available/evolution.conf
+server {
+    listen 80;
+    server_name evolution.seudominio.com.br;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name evolution.seudominio.com.br;
+
+    # SSL — preenchido automaticamente pelo certbot
+    ssl_certificate /etc/letsencrypt/live/evolution.seudominio.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/evolution.seudominio.com.br/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Autenticação básica para proteger a Evolution
+    auth_basic "Acesso Restrito";
+    auth_basic_user_file /etc/nginx/.htpasswd_evolution;
+
+    # Liberar webhook sem auth (para o Typebot chamar)
+    location /webhook {
+        auth_basic off;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        client_max_body_size 50M;
+    }
+}
+```
+
+### Bloco para Typebot Builder
+```nginx
+# /etc/nginx/sites-available/typebot-builder.conf
+server {
+    listen 80;
+    server_name typebot.seudominio.com.br;
+    return 301 https://$server_name$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name typebot.seudominio.com.br;
+    ssl_certificate /etc/letsencrypt/live/typebot.seudominio.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/typebot.seudominio.com.br/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+### Bloco para Typebot Viewer
+```nginx
+# /etc/nginx/sites-available/typebot-viewer.conf
+server {
+    listen 80;
+    server_name bot.seudominio.com.br;
+    return 301 https://$server_name$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name bot.seudominio.com.br;
+    ssl_certificate /etc/letsencrypt/live/bot.seudominio.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/bot.seudominio.com.br/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+```bash
+# Ativar todos os blocos
+ln -s /etc/nginx/sites-available/evolution.conf /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/typebot-builder.conf /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/typebot-viewer.conf /etc/nginx/sites-enabled/
+
+# SEMPRE testar antes de recarregar
+nginx -t && systemctl reload nginx
+```
+
+---
+
+## Etapa 9 — SSL via Let's Encrypt
+
+```bash
+apt install -y certbot python3-certbot-nginx
+
+# Emitir certificados (os blocos Nginx já devem estar ativos)
+certbot --nginx \
+  -d evolution.seudominio.com.br \
+  -d typebot.seudominio.com.br \
+  -d bot.seudominio.com.br \
+  --email admin@seudominio.com.br \
+  --agree-tos --no-eff-email
+
+# Testar renovação automática
+certbot renew --dry-run
+
+# Verificar certificados
+certbot certificates
+```
+
+> **Os certificados do GLPI não são afetados.** O certbot gerencia cada domínio em pasta separada em `/etc/letsencrypt/live/`.
+
+---
+
+## Etapa 10 — Testes Completos
+
+```bash
+# Saúde geral
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Evolution API
+curl http://localhost:8080/
+curl http://localhost:8080/instance/connectionState/glpi-bot \
+  -H "apikey: SUA_APIKEY_AQUI"
+
+# Typebot
+curl http://localhost:3001/api/health
+curl http://localhost:3002/
+
+# Via HTTPS (tudo funcionando com SSL)
+curl https://evolution.seudominio.com.br/ -u usuario:senha
+curl https://typebot.seudominio.com.br/api/health
+curl https://bot.seudominio.com.br/
+
+# GLPI continua funcionando
+curl https://glpi.seudominio.com.br/glpi/apirest.php/
+```
+
+### Configurar integração nativa Evolution → Typebot
+```bash
+# Ativar Typebot na instância (integração nativa Evolution v2)
+curl -X POST "http://localhost:8080/typebot/set/glpi-bot" \
+  -H "Content-Type: application/json" \
+  -H "apikey: SUA_APIKEY_AQUI" \
+  -d '{
+    "enabled": true,
+    "url": "https://bot.seudominio.com.br",
+    "typebot": "ID_PUBLICO_DO_SEU_TYPEBOT",
+    "triggerType": "all",
+    "expire": 20,
+    "keywordFinish": "#sair",
+    "delayMessage": 1500,
+    "unknownMessage": "Não entendi. Digite qualquer coisa para recomeçar.",
+    "listeningFromMe": false,
+    "stopBotFromMe": false,
+    "keepOpen": false,
+    "debounceTime": 0
+  }'
+```
+
+---
+
+## Etapa 11 — Segurança e Boas Práticas
+
+### Proteger Evolution API
+```bash
+# Criar usuário de autenticação básica para o Nginx
+htpasswd -c /etc/nginx/.htpasswd_evolution admin
+# (informe a senha quando solicitado)
+nginx -t && systemctl reload nginx
+```
+
+### Proteger variáveis de ambiente
+```bash
+chmod 600 /opt/stack/evolution/.env
+chmod 600 /opt/stack/typebot/.env
+chown root:root /opt/stack/evolution/.env /opt/stack/typebot/.env
+```
+
+### Monitorar conexão WhatsApp
+```bash
+cat > /opt/stack/evolution/check-connection.sh << 'SCRIPT'
+#!/bin/bash
+STATUS=$(curl -s "http://localhost:8080/instance/connectionState/glpi-bot" \
+  -H "apikey: SUA_APIKEY_AQUI" | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))")
+if [ "$STATUS" != "open" ]; then
+  echo "$(date): WhatsApp desconectado — estado: $STATUS" >> /var/log/evolution-monitor.log
+fi
+SCRIPT
+chmod +x /opt/stack/evolution/check-connection.sh
+echo "*/5 * * * * root /opt/stack/evolution/check-connection.sh" > /etc/cron.d/evolution-monitor
+```
+
+### Hardening Baileys — Evitar banimento
+- ✅ Número **dedicado** (nunca o pessoal)
+- ✅ `delayMessage: 1500` (mínimo 1.5s entre mensagens)
+- ✅ Nunca enviar para quem não iniciou contato
+- ✅ Evolution API **nunca exposta diretamente** (sempre atrás do Nginx + auth)
+- ✅ Sessão contínua — evite reconectar frequentemente
+- ✅ Evolution v2 com Baileys identifica como dispositivo Android nativo (mais seguro que WebClient)
+
+### Backup automático
+```bash
+cat > /opt/stack/backup.sh << 'SCRIPT'
+#!/bin/bash
+BACKUP_DIR="/opt/backups/$(date +%Y%m%d_%H%M)"
+mkdir -p "$BACKUP_DIR"
+docker exec evolution_postgres pg_dump -U evolution_user evolution_db > "$BACKUP_DIR/evolution_db.sql"
+docker exec typebot_postgres pg_dump -U typebot_user typebot_db > "$BACKUP_DIR/typebot_db.sql"
+cp /opt/stack/evolution/.env "$BACKUP_DIR/evolution.env.bak"
+cp /opt/stack/typebot/.env "$BACKUP_DIR/typebot.env.bak"
+tar -czf "/opt/backups/stack-$(date +%Y%m%d).tar.gz" "$BACKUP_DIR"
+rm -rf "$BACKUP_DIR"
+find /opt/backups -name "*.tar.gz" -mtime +7 -delete
+echo "Backup concluído: $(date)"
+SCRIPT
+chmod +x /opt/stack/backup.sh
+echo "0 3 * * * root /opt/stack/backup.sh >> /var/log/stack-backup.log 2>&1" > /etc/cron.d/stack-backup
+```
+
+---
+
+## Etapa 12 — Otimização da Integração GLPI
+
+### O problema do `initSession` repetido
+
+O fluxo atual abre uma nova sessão GLPI a cada conversa. Isso é ineficiente, gera múltiplas sessões ativas e pode causar rate limiting. A solução é um **micro-serviço proxy** que mantém **uma única sessão persistente**.
+
+### `/opt/stack/glpi-proxy/server.js`
+```javascript
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+const GLPI_URL   = process.env.GLPI_URL || 'http://host.docker.internal/glpi/apirest.php';
+const APP_TOKEN  = process.env.GLPI_APP_TOKEN;
+const USER_TOKEN = process.env.GLPI_USER_TOKEN;
+const RENEW_MS   = 28 * 60 * 1000; // renovar a cada 28 minutos
+
+let sessionToken  = null;
+let sessionExpiry = 0;
+
+async function initSession() {
+  const res = await fetch(`${GLPI_URL}/initSession`, {
+    headers: {
+      'App-Token': APP_TOKEN,
+      'Authorization': `user_token ${USER_TOKEN}`,
+      'Content-Type': 'application/json',
+    }
+  });
+  if (!res.ok) throw new Error(`initSession HTTP ${res.status}`);
+  const data = await res.json();
+  sessionToken  = data.session_token;
+  sessionExpiry = Date.now() + RENEW_MS;
+  console.log(`[${new Date().toISOString()}] Sessão GLPI renovada`);
+  return sessionToken;
+}
+
+async function getSession() {
+  if (!sessionToken || Date.now() > sessionExpiry) {
+    return await initSession();
+  }
+  return sessionToken;
+}
+
+// POST /ticket — criar chamado
+app.post('/ticket', async (req, res) => {
+  try {
+    let token = await getSession();
+    const { nome, descricao, tipo = 1, urgencia = 3, categoria_id = 0 } = req.body;
+
+    let ticketRes = await fetch(`${GLPI_URL}/Ticket`, {
+      method: 'POST',
+      headers: {
+        'App-Token': APP_TOKEN,
+        'Session-Token': token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ input: { name: nome, content: descricao, type: tipo, urgency: urgencia, itilcategories_id: categoria_id } }),
+    });
+
+    // Sessão expirada? Renovar e tentar de novo
+    if (ticketRes.status === 401) {
+      sessionToken = null;
+      token = await getSession();
+      ticketRes = await fetch(`${GLPI_URL}/Ticket`, {
+        method: 'POST',
+        headers: { 'App-Token': APP_TOKEN, 'Session-Token': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: { name: nome, content: descricao, type: tipo, urgency: urgencia, itilcategories_id: categoria_id } }),
+      });
+    }
+
+    const ticket = await ticketRes.json();
+    res.json({ success: true, ticket_id: ticket.id });
+  } catch (err) {
+    console.error('Erro ao criar ticket:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /health
+app.get('/health', (req, res) => res.json({
+  status: 'ok',
+  session_active: !!sessionToken,
+  session_expires_in_s: Math.round((sessionExpiry - Date.now()) / 1000),
+}));
+
+// Inicializar e renovar periodicamente
+initSession()
+  .then(() => {
+    setInterval(initSession, RENEW_MS);
+    app.listen(3003, '0.0.0.0', () => console.log('GLPI Proxy porta 3003'));
+  })
+  .catch(err => { console.error('Falha startup:', err.message); process.exit(1); });
+```
+
+### Adicionar o GLPI Proxy ao docker-compose do Typebot
+```yaml
+  glpi-proxy:
+    container_name: glpi_proxy
+    image: node:20-alpine
+    restart: always
+    working_dir: /app
+    command: sh -c "npm install --save express node-fetch@3 && node server.js"
+    ports:
+      - "127.0.0.1:3003:3003"
+    volumes:
+      - /opt/stack/glpi-proxy:/app
+    environment:
+      GLPI_URL: http://host.docker.internal/glpi/apirest.php
+      GLPI_APP_TOKEN: SEU_APP_TOKEN_GLPI
+      GLPI_USER_TOKEN: SEU_USER_TOKEN_GLPI
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - typebot_network
+```
+
+### Bloco HTTP Request no Typebot (configuração final)
+```
+URL:     http://glpi-proxy:3003/ticket
+Método:  POST
+Headers: Content-Type: application/json
+Body:
+{
+  "nome":        "{{titulo_chamado}}",
+  "descricao":   "{{descricao_chamado}}",
+  "tipo":        1,
+  "urgencia":    {{urgencia}},
+  "categoria_id": {{categoria_id}}
+}
+
+Salvar resposta: {{resposta_glpi}}
+Exibir para usuário: "Chamado {{resposta_glpi.ticket_id}} criado com sucesso! ✅"
+```
+
+### Mapeamento de urgência GLPI
+| Valor | Significado |
+|---|---|
+| `1` | Muito Alta |
+| `2` | Alta |
+| `3` | Média (padrão) |
+| `4` | Baixa |
+| `5` | Muito Baixa |
+
+---
+
+## Comandos de Operação do Stack
+
+```bash
+# Iniciar tudo
+cd /opt/stack/evolution && docker compose up -d
+cd /opt/stack/typebot   && docker compose up -d
+
+# Logs em tempo real
+docker compose -f /opt/stack/evolution/docker-compose.yml logs -f
+docker compose -f /opt/stack/typebot/docker-compose.yml logs -f
+
+# Atualizar imagens sem downtime
+docker compose -f /opt/stack/evolution/docker-compose.yml pull && docker compose -f /opt/stack/evolution/docker-compose.yml up -d
+docker compose -f /opt/stack/typebot/docker-compose.yml pull && docker compose -f /opt/stack/typebot/docker-compose.yml up -d
+
+# Status WhatsApp
+curl http://localhost:8080/instance/connectionState/glpi-bot -H "apikey: SUA_APIKEY_AQUI"
+
+# Backup manual
+/opt/stack/backup.sh
+```
+
+---
+
+**Checklist final:**
+
+- [ ] GLPI acessível normalmente — verificar login
+- [ ] Evolution API online — `curl http://localhost:8080/`
+- [ ] WhatsApp conectado — status `"state":"open"`
+- [ ] Typebot Builder acessível via HTTPS
+- [ ] Enviar mensagem no WhatsApp → fluxo Typebot dispara
+- [ ] Chamado criado no GLPI com número de retorno
+- [ ] SSL válido nos 3 subdomínios novos
+- [ ] Todos containers com `restart: always` — sobrevivem a reboot
+- [ ] Backup agendado às 3h confirmado
+- [ ] Monitoramento de sessão WhatsApp ativo no cron
