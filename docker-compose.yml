@@ -11,27 +11,28 @@ services:
   # ═══════════════════════════════════════════════════════════════
   evolution-api:
     container_name: evolution_api
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.7
     restart: always
     ports:
       - "127.0.0.1:8080:8080"
-    env_file:
-      - .env
     environment:
       - SERVER_TYPE=http
       - SERVER_PORT=8080
+      - AUTHENTICATION_API_KEY=${AUTHENTICATION_API_KEY}
       - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution_user:${POSTGRES_EVOLUTION_PASSWORD}@evolution-postgres:5432/evolution_db
       - DATABASE_CONNECTION_LIMIT=20
       - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
       - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evolution-redis:6379/0
       - CACHE_REDIS_PREFIX_KEY=evolution
       - CACHE_REDIS_SAVE_INSTANCES=false
       - CACHE_LOCAL_ENABLED=false
-      - LOG_LEVEL=ERROR,WARN,LOG
+      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS,WEBSOCKET
       - LOG_COLOR=true
       - LOG_BAILEYS=error
       - DEL_INSTANCE=false
-      - DEL_TEMP_INSTANCES=true
+      - DEL_TEMP_INSTANCES=false
       - WEBHOOK_GLOBAL_ENABLED=false
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
@@ -42,6 +43,7 @@ services:
       - evolution_instances:/evolution/instances
     networks:
       - evolution_db_net
+      - internal_net
     depends_on:
       evolution-postgres:
         condition: service_healthy
@@ -195,6 +197,27 @@ services:
         max-file: "2"
 
   # ═══════════════════════════════════════════════════════════════
+  #  REDIS — Fila do GLPI Proxy (retry, DLQ, leads)
+  # ═══════════════════════════════════════════════════════════════
+  proxy-redis:
+    container_name: proxy_redis
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ═══════════════════════════════════════════════════════════════
   #  GLPI PROXY — Micro-serviço de sessão persistente
   # ═══════════════════════════════════════════════════════════════
   glpi-proxy:
@@ -210,11 +233,18 @@ services:
       GLPI_APP_TOKEN: ${GLPI_APP_TOKEN}
       GLPI_USER_TOKEN: ${GLPI_USER_TOKEN}
       PROXY_SECRET: ${PROXY_SECRET}
+      REDIS_URL: redis://proxy-redis:6379
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${AUTHENTICATION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE_NAME}
+      MANAGER_PHONES: ${MANAGER_PHONES}
       NODE_ENV: production
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      proxy-redis:
+        condition: service_healthy
     networks:
-      - evolution_db_net
       - internal_net
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
@@ -226,6 +256,19 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  MAILPIT - E-mail local falso
+  # ═══════════════════════════════════════════════════════════════
+  mailpit:
+    image: axllent/mailpit
+    container_name: mailpit
+    restart: always
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "1025:1025"
+    networks:
+      - internal_net
 
 # ═══════════════════════════════════════════════════════════════
 #  VOLUMES PERSISTENTES

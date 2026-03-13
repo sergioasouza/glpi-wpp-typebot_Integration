@@ -1,7 +1,8 @@
 # 🤖 Fluxo do Bot WhatsApp → GLPI — Design Completo
 
 > Este documento descreve o fluxo lógico completo do bot de atendimento via WhatsApp
-> integrado ao GLPI. Use como referência para montar o fluxo no Typebot.
+> (Evolution API) integrado ao GLPI. Use como referência para montar o fluxo no Typebot.
+> Última atualização: 11/03/2026
 
 ---
 
@@ -9,26 +10,41 @@
 
 ```mermaid
 graph TD
-  START[Mensagem recebida] --> GREET[Boas-vindas Oud Tecnologia]
+  START[Mensagem recebida via Evolution API] --> GREET[Boas-vindas Oud Tecnologia]
   GREET --> CHOICE{Selecione a opção}
   
-  CHOICE -- "Comercial" --> COM[Fluxo Comercial / Pré-venda]
-  COM --> COM_END[Falar com Atendente Comercial]
+  CHOICE -- "Comercial" --> COM_MENU{Menu Comercial}
+  COM_MENU --> COM1[🏷️ Ver Produtos]
+  COM_MENU --> COM2[💰 Solicitar Orçamento]
+  COM_MENU --> COM3[📅 Agendar Reunião]
+  COM1 --> PROD_LIST[Lista de Produtos → Detalhes]
+  COM2 --> ORC_FORM[Formulário → Redis + Notifica Gestores]
+  COM3 --> REUN_FORM[Formulário → Redis + Notifica Gestores]
 
-  CHOICE -- "Já sou cliente" --> IDENT[Coleta IDENTIFICADOR<br/>CPF/Matrícula]
+  CHOICE -- "Já sou cliente" --> IDENT[Coleta EMAIL corporativo]
   
-  IDENT --> SEARCH[Buscar no GLPI]
+  IDENT --> SEARCH[GLPI Proxy: buscar por email]
   
-  SEARCH -- "Não encontrado" --> REG[Cadastro Rápido]
-  REG --> MENU
+  SEARCH -- "Não encontrado" --> BLOCKED[Msg padrão: não cadastrado<br/>→ Só mostra Comercial]
+  BLOCKED --> COM_MENU
   
   SEARCH -- "Encontrado" --> MENU[Menu Principal]
   
-  MENU --> OPT1[Abrir Ticket]
-  MENU --> OPT2[Meus Chamados]
-  MENU --> OPT3[Status Chamado]
-  MENU --> OPT4[Falar com Humano]
+  MENU --> OPT1[1. Abrir Ticket → GLPI]
+  MENU --> OPT2[2. Meus Chamados]
+  MENU --> OPT3[3. Status Chamado]
+  MENU --> OPT4[4. Falar com Humano]
+  MENU --> OPT5[5. Encerrar]
 ```
+
+**Caminho dos dados:**
+```
+WhatsApp → Evolution API (VPS:8080) → Typebot Viewer (VPS:3002) → GLPI Proxy (VPS:3003) → GLPI API (localhost)
+```
+
+**Regra fundamental:**
+- **Pessoa cadastrada no GLPI** → Acesso completo (Menu Principal + Comercial)
+- **Pessoa NÃO cadastrada** → Apenas Comercial (sem abrir chamados)
 
 ---
 
@@ -47,28 +63,25 @@ BOTÕES:
 
 ---
 
-### ETAPA 1 — Boas-Vindas (Identificação Cliente)
+### ETAPA 1 — Identificação do Cliente (por Email)
 
 ```
 BOT: "Excelente! Para agilizarmos seu atendimento, preciso te identificar.
-      Por favor, informe seu CPF ou matrícula:"
+      Por favor, informe seu email corporativo cadastrado:"
 
-USUÁRIO: digita CPF ou matrícula → salvar em {{identificador}}
+USUÁRIO: digita email → salvar em {{email_identificacao}}
 ```
 
 **Validação do input:**
-- Remover pontos, traços e espaços
-- Verificar se é numérico
-- Se CPF: validar dígitos (11 caracteres)
-- Se matrícula: aceitar formato da empresa
+- Verificar se contém `@` e domínio válido
+- Converter para minúsculo
 
 ```
 Se inválido:
-BOT: "❌ Formato inválido. Por favor, informe apenas os números do CPF (11 dígitos)
-      ou número de matrícula.
-      Exemplo: 12345678901"
+BOT: "❌ Email inválido. Por favor, informe um email válido.
+      Exemplo: nome@empresa.com"
 → repetir pergunta (máx 3 tentativas)
-→ após 3 falhas: "Por favor, entre em contato com o setor de TI diretamente."
+→ após 3 falhas: "Por favor, entre em contato com o gestor do seu projeto."
 ```
 
 ---
@@ -85,7 +98,7 @@ Headers:
   x-proxy-key: {{proxy_secret}}
 Body:
 {
-  "identificador": "{{identificador}}"
+  "email": "{{email_identificacao}}"
 }
 Salvar em: {{usuario_glpi}}
 ```
@@ -99,67 +112,35 @@ Se usuario_glpi.found == true:
   → Ir para MENU PRINCIPAL
 
 Se usuario_glpi.found == false:
-  → BOT: "Não encontrei seu cadastro no sistema. Vamos fazer um cadastro rápido?"
-  → Ir para CADASTRO RÁPIDO
+  → Ir para MENSAGEM PADRÃO (não cadastrado)
 ```
 
 ---
 
-### ETAPA 3a — Cadastro Rápido (se não encontrado)
+### ETAPA 3 — Mensagem Padrão (Não Cadastrado)
+
+> **IMPORTANTE:** Pessoas não cadastradas NÃO podem abrir chamados.
+> A única opção disponível é o fluxo Comercial.
 
 ```
-BOT: "📝 Vamos ao cadastro rápido. Qual seu nome completo?"
-USUÁRIO: → salvar em {{nome_completo}}
+BOT: "❌ Não encontramos seu cadastro em nossa base.
 
-BOT: "Qual seu email corporativo?"
-USUÁRIO: → salvar em {{email}}
-  Validar: contém @ e domínio válido
-  Se inválido: "❌ Email inválido. Informe um email válido (ex: nome@empresa.com)"
+      Caso você seja integrante de alguma empresa cliente da Oud Tecnologia,
+      por favor contate o gestor do seu projeto para que ele solicite
+      seu cadastro no sistema.
 
-BOT: "Qual seu setor/departamento?"
-USUÁRIO: Botões com opções pré-definidas (baseados nos Grupos do GLPI)
-  [ TI ]  [ Financeiro ]  [ RH ]  [ Operacional ]  [ Administrativo ]  [ Outro ]
-  → salvar em {{setor}}
+      Enquanto isso, posso te ajudar com informações comerciais! 😊"
 
-BOT: "Qual seu ramal/telefone de contato? (opcional — digite 0 para pular)"
-USUÁRIO: → salvar em {{telefone_contato}}
-```
-
-**HTTP Request — Criar usuário no GLPI:**
-
-```
-URL:     http://glpi-proxy:3003/user/create
-Método:  POST
-Headers:
-  Content-Type: application/json
-  x-proxy-key: {{proxy_secret}}
-Body:
-{
-  "nome": "{{nome_completo}}",
-  "email": "{{email}}",
-  "telefone": "{{telefone_contato}}",
-  "setor": "{{setor}}",
-  "identificador": "{{identificador}}"
-}
-Salvar em: {{novo_usuario}}
-```
-
-```
-Se sucesso:
-  → Salvar {{user_id}} do retorno
-  → BOT: "✅ Cadastro realizado! Agora você pode usar todos os serviços."
-  → Ir para MENU PRINCIPAL
-
-Se erro:
-  → BOT: "❌ Não consegui fazer seu cadastro automaticamente.
-          Por favor, entre em contato com o TI pelo ramal XXXX
-          ou email ti@empresa.com para liberação de acesso."
-  → Encerrar fluxo
+BOTÕES:
+[ Ver nossos produtos ]         → FLUXO COMERCIAL > Produtos
+[ Solicitar orçamento ]         → FLUXO COMERCIAL > Orçamento
+[ Agendar uma reunião ]         → FLUXO COMERCIAL > Reunião
+[ Encerrar ]                    → ENCERRAR
 ```
 
 ---
 
-### ETAPA 3b — Menu Principal
+### ETAPA 4 — Menu Principal (somente clientes cadastrados)
 
 ```
 BOT: "Como posso ajudar?
@@ -168,10 +149,13 @@ BOT: "Como posso ajudar?
       2️⃣ 📋 Ver meus chamados
       3️⃣ 🔍 Consultar status de um chamado
       4️⃣ 💬 Falar com um atendente
-      5️⃣ ❌ Encerrar"
+      5️⃣ 🏷️ Área comercial
+      6️⃣ ❌ Encerrar"
 
 USUÁRIO: escolhe opção → salvar em {{opcao_menu}}
 ```
+
+> **Nota:** Clientes cadastrados também podem acessar o menu comercial (opção 5).
 
 ---
 
@@ -311,25 +295,15 @@ Se erro (queued = true):
         Deseja fazer mais alguma coisa?"
   → Botões: [ Menu Principal ] [ Encerrar ]
 
----
-
-## 3. Resiliência e Tratamento de Erros
-
-**Cenário de Queda do GLPI (Offline):**
-1. O usuário tenta abrir o chamado via bot.
-2. O bot envia o payload para o `glpi-proxy`.
-3. O proxy percebe que o GLPI não responde ou retorna erro 500+.
-4. O proxy salva o ticket no **Redis** (fila persistente) e retorna status HTTP 202 (Accepted).
-5. O bot avisa o usuário: *"Nosso sistema está com uma instabilidade momentânea, mas seu chamado está na fila segura. Ele será criado automaticamente assim que o sistema voltar."*
-6. O proxy tenta recriar o ticket a cada minuto. Se falhar 5 vezes, move para o **Dead Letter Queue (DLQ)** no Redis, garantindo que nenhum dado seja perdido e possa ser recuperado manualmente pelo administrador.
-
----
 Se erro (queued = false):
   BOT: "❌ Ocorreu um erro ao abrir o chamado. Por favor, tente
         novamente em alguns minutos ou entre em contato com o TI
         pelo ramal XXXX."
   → Botões: [ Tentar Novamente ] [ Menu Principal ] [ Encerrar ]
 ```
+
+**Resiliência:** Se GLPI não responde, o proxy salva no Redis e tenta recriar a cada 1 min.
+Após 5 falhas → Dead Letter Queue (recuperação manual pelo admin).
 
 ---
 
@@ -414,34 +388,210 @@ Se não encontrado:
 
 ---
 
-### FLUXO COMERCIAL — Pré-venda (Lead)
+### FLUXO COMERCIAL — 3 Opções
+
+> Acessível por **qualquer pessoa** (cadastrada ou não).
 
 ```
-BOT: "Legal! Que bom seu interesse na Oud Tecnologia. 🚀
-      Para que um de nossos consultores possa te atender da melhor forma,
-      preciso de apenas 3 informações rápidas:
-
-      Qual seu nome?"
-USUÁRIO: → {{nome_lead}}
-
-BOT: "E qual o nome da sua empresa?"
-USUÁRIO: → {{empresa_lead}}
-
-BOT: "Perfeito, {{nome_lead}} da {{empresa_lead}}. Qual serviço você busca?
-      (Clique em uma das opções abaixo)"
+BOT: "🚀 Área Comercial da Oud Tecnologia!
+      Como posso te ajudar?"
 
 BOTÕES:
-[ Suporte/Consultoria GLPI ]
-[ Cloud/Infraestrutura ]
-[ Desenvolvimento Sob Medida ]
-[ Outros ]
-USUÁRIO: → {{interesse_lead}}
+[ 🏷️ Ver nossos produtos ]       → PRODUTOS
+[ 💰 Solicitar orçamento ]        → ORÇAMENTO
+[ 📅 Agendar uma reunião ]        → REUNIÃO
+[ ↩️ Voltar ]                     → Menu anterior
+```
 
-BOT: "Obrigado! Já passei seus dados para o comercial.
-      Um de nossos consultores falará com você neste número em instantes. 🕒"
+---
 
-NOTIFICAÇÃO (via Webhook):
-Enviar dados para grupo de WhatsApp do Comercial ou CRM.
+#### COMERCIAL > Opção 1 — Ver Produtos
+
+```
+BOT: "Conheça nossos serviços! Escolha para saber mais:"
+
+BOTÕES:
+[ 🖥️ Suporte e Consultoria GLPI ]
+[ ☁️ Cloud e Infraestrutura ]
+[ 💻 Desenvolvimento Sob Medida ]
+[ 📊 Monitoramento e NOC ]
+[ 🔐 Segurança da Informação ]
+[ ↩️ Voltar ao menu comercial ]
+
+USUÁRIO: escolhe → {{produto_selecionado}}
+```
+
+**Exemplo de detalhe de produto (exibido ao clicar):**
+
+```
+Se "Suporte e Consultoria GLPI":
+  BOT: "🖥️ *Suporte e Consultoria GLPI*
+
+        Oferecemos implantação, customização e suporte técnico
+        especializado para o GLPI.
+
+        ✅ Implantação e configuração completa
+        ✅ Treinamento para equipe
+        ✅ Suporte contínuo (SLA definido)
+        ✅ Integrações e plugins personalizados
+
+        Deseja saber mais?"
+  → Botões: [ Solicitar Orçamento ] [ Ver outros produtos ] [ Voltar ]
+```
+
+> Repetir mesma estrutura para cada produto (Cloud, Desenvolvimento, NOC, Segurança).
+
+---
+
+#### COMERCIAL > Opção 2 — Solicitar Orçamento
+
+> Formulário salvo no Redis + notificação automática para gestores via WhatsApp.
+
+```
+BOT: "💰 Vamos montar um orçamento para você!
+      Preciso de algumas informações:"
+
+BOT: "Qual seu nome completo?"
+USUÁRIO: → {{lead_nome}}
+
+BOT: "Qual o nome da sua empresa?"
+USUÁRIO: → {{lead_empresa}}
+
+BOT: "Qual seu email para contato?"
+USUÁRIO: → {{lead_email}}
+  Validar: contém @ e domínio válido
+
+BOT: "Qual seu telefone? (com DDD)"
+USUÁRIO: → {{lead_telefone}}
+
+BOT: "Qual serviço você tem interesse?"
+BOTÕES:
+  [ Suporte/Consultoria GLPI ]
+  [ Cloud/Infraestrutura ]
+  [ Desenvolvimento Sob Medida ]
+  [ Monitoramento/NOC ]
+  [ Segurança ]
+  [ Outro ]
+USUÁRIO: → {{lead_servico}}
+
+BOT: "Quer acrescentar algum detalhe ou observação?
+      (digite 'não' para pular)"
+USUÁRIO: → {{lead_detalhes}}
+```
+
+**Confirmação + HTTP Request:**
+
+```
+BOT: "📋 Resumo do seu pedido de orçamento:
+
+      👤 Nome: {{lead_nome}}
+      🏢 Empresa: {{lead_empresa}}
+      📧 Email: {{lead_email}}
+      📱 Telefone: {{lead_telefone}}
+      🏷️ Serviço: {{lead_servico}}
+      📝 Detalhes: {{lead_detalhes}}
+
+      ✅ Confirmar envio?"
+
+Se confirmou:
+  URL:     http://glpi-proxy:3003/comercial/lead
+  Método:  POST
+  Headers:
+    Content-Type: application/json
+    x-proxy-key: {{proxy_secret}}
+  Body:
+  {
+    "tipo": "orcamento",
+    "nome": "{{lead_nome}}",
+    "empresa": "{{lead_empresa}}",
+    "email": "{{lead_email}}",
+    "telefone": "{{lead_telefone}}",
+    "detalhes": "Serviço: {{lead_servico}}. {{lead_detalhes}}"
+  }
+
+  BOT: "✅ Pedido de orçamento enviado com sucesso!
+        Um de nossos consultores entrará em contato em breve. 🚀"
+```
+
+> **Backend:** O proxy salva o lead no Redis (`comercial:leads`) e
+> envia WhatsApp para os gestores via Evolution API automaticamente.
+
+---
+
+#### COMERCIAL > Opção 3 — Agendar Reunião
+
+> Formulário salvo no Redis + notificação automática para gestores via WhatsApp.
+
+```
+BOT: "📅 Vamos agendar uma reunião!
+      Preciso de algumas informações:"
+
+BOT: "Qual seu nome completo?"
+USUÁRIO: → {{reun_nome}}
+
+BOT: "Qual o nome da sua empresa?"
+USUÁRIO: → {{reun_empresa}}
+
+BOT: "Qual seu email para contato?"
+USUÁRIO: → {{reun_email}}
+  Validar: contém @ e domínio válido
+
+BOT: "Qual seu telefone? (com DDD)"
+USUÁRIO: → {{reun_telefone}}
+
+BOT: "Qual data preferencial para a reunião?"
+BOTÕES:
+  [ Esta semana ]
+  [ Próxima semana ]
+  [ Sem preferência ]
+USUÁRIO: → {{reun_data}}
+
+BOT: "Qual horário prefere?"
+BOTÕES:
+  [ Manhã (8h-12h) ]
+  [ Tarde (13h-18h) ]
+  [ Sem preferência ]
+USUÁRIO: → {{reun_horario}}
+
+BOT: "Qual o assunto da reunião?"
+USUÁRIO: → {{reun_assunto}}
+```
+
+**Confirmação + HTTP Request:**
+
+```
+BOT: "📋 Resumo do agendamento:
+
+      👤 Nome: {{reun_nome}}
+      🏢 Empresa: {{reun_empresa}}
+      📧 Email: {{reun_email}}
+      📱 Telefone: {{reun_telefone}}
+      📅 Data: {{reun_data}}
+      🕐 Horário: {{reun_horario}}
+      📝 Assunto: {{reun_assunto}}
+
+      ✅ Confirmar agendamento?"
+
+Se confirmou:
+  URL:     http://glpi-proxy:3003/comercial/lead
+  Método:  POST
+  Headers:
+    Content-Type: application/json
+    x-proxy-key: {{proxy_secret}}
+  Body:
+  {
+    "tipo": "reuniao",
+    "nome": "{{reun_nome}}",
+    "empresa": "{{reun_empresa}}",
+    "email": "{{reun_email}}",
+    "telefone": "{{reun_telefone}}",
+    "data_preferencial": "{{reun_data}}",
+    "horario_preferencial": "{{reun_horario}}",
+    "detalhes": "{{reun_assunto}}"
+  }
+
+  BOT: "✅ Solicitação de reunião enviada!
+        Nossa equipe comercial confirmará o horário em breve. 🚀"
 ```
 
 ---
@@ -459,7 +609,7 @@ BOT: "✅ Solicitação registrada. Um analista entrará em contato em breve.
       Horário de atendimento: Seg-Sex, 08h às 18h.
       Fora do horário, utilize a opção 'Abrir Chamado' pelo bot."
 
-NOTIFICAÇÃO (via Webhook):
+NOTIFICAÇÃO (via Evolution API):
 Enviar dados para o grupo de Suporte/TI com link para o usuário no WhatsApp.
 ```
 
@@ -468,7 +618,7 @@ Enviar dados para o grupo de Suporte/TI com link para o usuário no WhatsApp.
 ### OPÇÃO 5 — Encerrar
 
 ```
-BOT: "Obrigado por usar o atendimento de TI! 👋
+BOT: "Obrigado por usar o atendimento da Oud Tecnologia! 👋
       Se precisar de algo, é só mandar uma mensagem.
       Até mais!"
 → Encerrar fluxo
@@ -482,12 +632,15 @@ O `server.js` precisa dos seguintes endpoints para suportar o fluxo completo:
 
 | Método | Endpoint | Função |
 |---|---|---|
-| `POST` | `/ticket` | Criar chamado ✅ (já existe) |
-| `GET` | `/ticket/:id` | Consultar chamado ✅ (já existe) |
-| `POST` | `/user/search` | Buscar usuário por CPF/matrícula 🆕 |
-| `POST` | `/user/create` | Criar usuário no GLPI 🆕 |
-| `GET` | `/user/:id/tickets` | Listar tickets do usuário 🆕 |
-| `GET` | `/health` | Health check ✅ (já existe) |
+| `POST` | `/ticket` | Criar chamado ✅ |
+| `GET` | `/ticket/:id` | Consultar chamado ✅ |
+| `POST` | `/user/search` | Buscar usuário por **email** ✅ |
+| `GET` | `/user/:id/tickets` | Listar tickets do usuário ✅ |
+| `POST` | `/comercial/lead` | Salvar lead + notificar gestores 🆕 |
+| `GET` | `/health` | Health check ✅ |
+
+> **REMOVIDO:** `POST /user/create` — Não é permitido criar usuários via WhatsApp.
+> Usuários devem ser cadastrados pelo gestor diretamente no GLPI.
 
 ---
 
@@ -495,36 +648,80 @@ O `server.js` precisa dos seguintes endpoints para suportar o fluxo completo:
 
 | Situação | Comportamento do Bot |
 |---|---|
-| CPF/matrícula inválido | Pede novamente, máx 3x, depois encerra |
-| Usuário não encontrado no GLPI | Oferece cadastro rápido |
-| Cadastro falha | Direciona para contato humano |
-| GLPI fora do ar ao criar ticket | Ticket entra na fila de retry, usuário é avisado |
+| Email inválido | Pede novamente, máx 3x, depois encerra |
+| Usuário não encontrado no GLPI | Mensagem padrão (não cadastrado) → só mostra Comercial |
+| GLPI fora do ar ao criar ticket | Ticket entra na fila Redis, usuário é avisado |
 | GLPI fora do ar ao consultar | Mensagem de indisponibilidade + sugestão de tentar depois |
 | Ticket não encontrado | Informa e pede para verificar número |
 | Timeout do fluxo (30 min sem resposta) | Fluxo morre, próxima mensagem reinicia |
 | Input inesperado em qualquer etapa | "Não entendi" + repetir a pergunta |
+| Erro ao salvar lead comercial | Mensagem de erro + contato alternativo |
+| Evolution API fora do ar | Mensagens não chegam — verificar container e painel |
 | Erro desconhecido (500) | Mensagem genérica + sugestão de contato humano |
 
 ---
 
 ## 5. Variáveis do Typebot — Referência
 
+### Variáveis de Identificação
+
 | Variável | Tipo | Onde é definida |
 |---|---|---|
-| `{{identificador}}` | string | Input do usuário (CPF/matrícula) |
-| `{{usuario_glpi}}` | object | Resposta de `/user/search` |
-| `{{user_id}}` | number | Extraído de `usuario_glpi` ou `novo_usuario` |
+| `{{email_identificacao}}` | string | Input do usuário (email corporativo) |
+| `{{usuario_glpi}}` | object | Resposta de `POST /user/search` |
+| `{{user_id}}` | number | Extraído de `usuario_glpi` |
 | `{{user_name}}` | string | Extraído de `usuario_glpi` |
-| `{{nome_completo}}` | string | Input do usuário (cadastro) |
-| `{{email}}` | string | Input do usuário (cadastro) |
-| `{{setor}}` | string | Escolha do usuário (cadastro) |
-| `{{telefone_contato}}` | string | Input do usuário (cadastro) |
+| `{{user_email}}` | string | Extraído de `usuario_glpi` |
+
+### Variáveis de Chamado
+
+| Variável | Tipo | Onde é definida |
+|---|---|---|
 | `{{tipo_chamado}}` | number | 1=Incidente, 2=Solicitação |
 | `{{categoria_id}}` | number | ID da categoria ITIL no GLPI |
 | `{{urgencia}}` | number | 2=Alta, 3=Média, 4=Baixa |
 | `{{titulo_chamado}}` | string | Input do usuário |
 | `{{descricao_chamado}}` | string | Input do usuário |
-| `{{resposta_ticket}}` | object | Resposta de `/ticket` |
-| `{{meus_tickets}}` | array | Resposta de `/user/:id/tickets` |
-| `{{ticket_info}}` | object | Resposta de `/ticket/:id` |
+| `{{resposta_ticket}}` | object | Resposta de `POST /ticket` |
+| `{{meus_tickets}}` | array | Resposta de `GET /user/:id/tickets` |
+| `{{ticket_info}}` | object | Resposta de `GET /ticket/:id` |
+| `{{ticket_id_consulta}}` | string | Input do usuário |
+
+### Variáveis Comerciais — Orçamento
+
+| Variável | Tipo | Onde é definida |
+|---|---|---|
+| `{{lead_nome}}` | string | Input do usuário |
+| `{{lead_empresa}}` | string | Input do usuário |
+| `{{lead_email}}` | string | Input do usuário |
+| `{{lead_telefone}}` | string | Input do usuário |
+| `{{lead_servico}}` | string | Escolha do usuário |
+| `{{lead_detalhes}}` | string | Input do usuário |
+| `{{lead_resposta}}` | object | Resposta de `POST /comercial/lead` |
+
+### Variáveis Comerciais — Reunião
+
+| Variável | Tipo | Onde é definida |
+|---|---|---|
+| `{{reun_nome}}` | string | Input do usuário |
+| `{{reun_empresa}}` | string | Input do usuário |
+| `{{reun_email}}` | string | Input do usuário |
+| `{{reun_telefone}}` | string | Input do usuário |
+| `{{reun_data}}` | string | Escolha do usuário |
+| `{{reun_horario}}` | string | Escolha do usuário |
+| `{{reun_assunto}}` | string | Input do usuário |
+| `{{reun_resposta}}` | object | Resposta de `POST /comercial/lead` |
+
+### Variáveis de Sistema
+
+| Variável | Tipo | Onde é definida |
+|---|---|---|
 | `{{proxy_secret}}` | string | Configurar como variável oculta no Typebot |
+| `{{produto_selecionado}}` | string | Escolha do usuário (produtos) |
+| `{{motivo_suporte}}` | string | Input do usuário (falar com atendente) |
+
+---
+
+> **Nota sobre menus:** Como a Evolution API não suporta mais listas interativas
+> do WhatsApp, todos os menus com mais de 3 opções usam **texto numerado**
+> ("digite 1, 2, 3..."). Para menus com até 3 opções, use **reply buttons**.

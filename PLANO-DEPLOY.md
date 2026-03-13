@@ -1,7 +1,15 @@
 # 📘 Plano de Deploy — Integração WhatsApp + Typebot + GLPI
 
-> **Documento completo e definitivo** — baseado no diagnóstico real da VPS.
-> Última atualização: 04/03/2026
+> ⚠️ **DOCUMENTO DESCONTINUADO** — Este plano foi substituído pelo
+> [GUIA-COMPLETO.md](GUIA-COMPLETO.md), que unifica deploy, fluxo do bot e operação
+> em um único documento atualizado para **Evolution API** (ao invés de Nginx/UAZAPI).
+>
+> **Não siga as instruções abaixo.** Use o GUIA-COMPLETO.md como referência única.
+
+---
+
+> ~~**Documento completo e definitivo** — baseado no diagnóstico real da VPS.~~
+> Última atualização: 04/03/2026 (descontinuado em 11/03/2026)
 
 ---
 

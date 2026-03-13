@@ -1,27 +1,31 @@
 #!/bin/bash
 #################################################################
-#  Monitoramento da conexão WhatsApp + saúde dos serviços
+#  Monitoramento: containers Docker + Evolution API + saúde dos serviços
 #  Adicionar no cron (como root):
 #  */3 * * * * /opt/stack/scripts/monitor.sh >> /var/log/stack-monitor.log 2>&1
 #################################################################
 
 set -uo pipefail
 
-APIKEY="${EVOLUTION_APIKEY:-SUA_APIKEY_AQUI}"
-INSTANCE="glpi-bot"
+EVOLUTION_KEY="${AUTHENTICATION_API_KEY:-}"
+EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE_NAME:-glpi-bot}"
 LOG_PREFIX="$(date '+%Y-%m-%d %H:%M:%S')"
 
-# ── Verificar WhatsApp ──────────────────────────────────────
-WPP_STATUS=$(curl -sf "http://localhost:8080/instance/connectionState/$INSTANCE" \
-  -H "apikey: $APIKEY" 2>/dev/null | python3 -c \
-  "import sys,json; d=json.load(sys.stdin); print(d.get('state','unknown'))" 2>/dev/null || echo "unreachable")
+# ── Verificar WhatsApp (Evolution API — local) ──────────────
+if [ -n "$EVOLUTION_KEY" ]; then
+  WPP_STATUS=$(curl -sf "http://localhost:8080/instance/connectionState/${EVOLUTION_INSTANCE}" \
+    -H "apikey: $EVOLUTION_KEY" 2>/dev/null | python3 -c \
+    "import sys,json; d=json.load(sys.stdin); print(d.get('instance',{}).get('state','unknown') if 'instance' in d else d.get('state','unknown'))" 2>/dev/null || echo "unreachable")
 
-if [ "$WPP_STATUS" != "open" ]; then
-  echo "$LOG_PREFIX ❌ WhatsApp DESCONECTADO — estado: $WPP_STATUS"
-  # Descomente a linha abaixo para receber alerta por email:
-  # echo "WhatsApp desconectado ($WPP_STATUS)" | mail -s "⚠️ WhatsApp Bot Down" admin@seudominio.com.br
+  if [ "$WPP_STATUS" != "open" ]; then
+    echo "$LOG_PREFIX ❌ WhatsApp DESCONECTADO — estado: $WPP_STATUS (reconectar via painel Evolution)"
+    # Descomente para alerta por email:
+    # echo "WhatsApp desconectado ($WPP_STATUS)" | mail -s "⚠️ WhatsApp Bot Down" admin@seudominio.com.br
+  else
+    echo "$LOG_PREFIX ✅ WhatsApp OK (Evolution API)"
+  fi
 else
-  echo "$LOG_PREFIX ✅ WhatsApp OK"
+  echo "$LOG_PREFIX ⚠️ AUTHENTICATION_API_KEY não definida — pulando check WhatsApp"
 fi
 
 # ── Verificar GLPI Proxy ────────────────────────────────────
@@ -38,6 +42,15 @@ TYPEBOT_OK=$(curl -sf "http://localhost:3001/" -o /dev/null -w "%{http_code}" 2>
 if [ "$TYPEBOT_OK" = "000" ]; then
   echo "$LOG_PREFIX ❌ Typebot Builder INACESSÍVEL"
 fi
+
+# ── Verificar containers Docker (auto-restart se parado) ───
+for CONTAINER in evolution_api evolution_postgres evolution_redis typebot_builder typebot_viewer typebot_postgres glpi_proxy proxy_redis; do
+  STATE=$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo "missing")
+  if [ "$STATE" != "true" ]; then
+    echo "$LOG_PREFIX ⚠️ Container $CONTAINER está $STATE — tentando restart..."
+    docker start "$CONTAINER" 2>/dev/null || echo "$LOG_PREFIX ❌ Falha ao reiniciar $CONTAINER"
+  fi
+done
 
 # ── Verificar disco (alerta se > 85%) ───────────────────────
 DISK_USE=$(df / --output=pcent | tail -1 | tr -dc '0-9')

@@ -1,0 +1,1507 @@
+{
+  "version": "6",
+  "id": "fluxo-completo-glpi-proxy",
+  "name": "Atendimento Oud Tecnologia",
+  "events": [
+    {
+      "id": "evt-start",
+      "outgoingEdgeId": "edge-start-to-vars",
+      "graphCoordinates": { "x": 0, "y": 0 },
+      "type": "start"
+    }
+  ],
+  "groups": [
+    {
+      "id": "grp-vars",
+      "title": "Variáveis Globais",
+      "graphCoordinates": { "x": -30, "y": 100 },
+      "blocks": [
+        {
+          "id": "blk-set-proxy-secret",
+          "type": "Set variable",
+          "options": {
+            "variableId": "var-proxy-secret",
+            "expressionToEvaluate": "proxy_secret_local_999",
+            "isCode": false
+          }
+        },
+        {
+          "id": "blk-set-proxy-url",
+          "outgoingEdgeId": "edge-vars-to-triagem",
+          "type": "Set variable",
+          "options": {
+            "variableId": "var-proxy-url",
+            "expressionToEvaluate": "http://glpi-proxy:3003",
+            "isCode": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-triagem",
+      "title": "ETAPA 0 — Triagem Inicial",
+      "graphCoordinates": { "x": 400, "y": 0 },
+      "blocks": [
+        {
+          "id": "blk-saudacao",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Olá! 👋 Somos da Oud Tecnologia." }] },
+              { "type": "p", "children": [{ "text": "Para te atender de forma mais humana, como você prefere ser chamado?" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-nome-contato-input",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Digite seu nome", "button": "Enviar" },
+            "variableId": "var-contact-name"
+          }
+        },
+        {
+          "id": "blk-saudacao-menu",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Perfeito, {{contato_nome}}! 😊" }] },
+              { "type": "p", "children": [{ "text": "Selecione uma das opções abaixo para continuarmos:" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ Já sou cliente" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ Comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-triagem-input",
+          "outgoingEdgeId": "edge-triagem-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Digite 1 ou 2", "button": "Enviar" },
+            "variableId": "var-opcao-triagem"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-triagem-check",
+      "title": "Verificar Triagem",
+      "graphCoordinates": { "x": 850, "y": 0 },
+      "blocks": [
+        {
+          "id": "blk-triagem-cond",
+          "outgoingEdgeId": "edge-triagem-invalida",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-cliente",
+              "outgoingEdgeId": "edge-to-identificacao",
+              "content": {
+                "comparisons": [
+                  { "id": "cmp-1", "variableId": "var-opcao-triagem", "comparisonOperator": "Equal to", "value": "1" }
+                ]
+              }
+            },
+            {
+              "id": "item-comercial",
+              "outgoingEdgeId": "edge-to-comercial",
+              "content": {
+                "comparisons": [
+                  { "id": "cmp-2", "variableId": "var-opcao-triagem", "comparisonOperator": "Equal to", "value": "2" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-triagem-invalida",
+      "title": "Opção Inválida (Triagem)",
+      "graphCoordinates": { "x": 850, "y": 300 },
+      "blocks": [
+        {
+          "id": "blk-triagem-invalida-msg",
+          "outgoingEdgeId": "edge-triagem-retry",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "❌ Não entendi. Por favor, digite 1 (Já sou cliente) ou 2 (Comercial)." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-triagem-retry",
+      "title": "Voltar à Triagem",
+      "graphCoordinates": { "x": 1200, "y": 300 },
+      "blocks": [
+        { "id": "blk-triagem-retry", "type": "Jump", "options": { "groupId": "grp-triagem", "blockId": "blk-saudacao" } }
+      ]
+    },
+    {
+      "id": "grp-identificacao",
+      "title": "ETAPA 1 — Identificação (Email)",
+      "graphCoordinates": { "x": 1300, "y": -200 },
+      "blocks": [
+        {
+          "id": "blk-pedir-email",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Excelente, {{contato_nome}}! Para agilizarmos seu atendimento, faremos uma validação em 2 fatores." }] },
+              { "type": "p", "children": [{ "text": "1º fator: telefone do WhatsApp usado na conversa." }] },
+              { "type": "p", "children": [{ "text": "2º fator: email corporativo cadastrado no GLPI." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Por favor, informe seu email corporativo cadastrado:" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-email-input",
+          "outgoingEdgeId": "edge-email-to-busca",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "seu@email.com", "button": "Enviar" },
+            "variableId": "var-email"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-busca-usuario",
+      "title": "ETAPA 2 — Buscar Usuário no GLPI",
+      "graphCoordinates": { "x": 1700, "y": -200 },
+      "blocks": [
+        {
+          "id": "blk-busca-http",
+          "outgoingEdgeId": "edge-busca-to-check",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-found", "variableId": "var-user-found", "bodyPath": "found" },
+              { "id": "map-uid", "variableId": "var-user-id", "bodyPath": "user_id" },
+              { "id": "map-uname", "variableId": "var-user-name", "bodyPath": "user_name" },
+              { "id": "map-uemail", "variableId": "var-user-email", "bodyPath": "user_email" }
+            ],
+            "isAdvancedConfig": true,
+            "isCustomBody": true,
+            "webhook": {
+              "method": "POST",
+              "url": "{{proxy_url}}/user/search",
+              "headers": [
+                { "id": "h1", "key": "Content-Type", "value": "application/json" },
+                { "id": "h2", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ],
+              "body": "{\"email\": \"{{email_identificacao}}\", \"telefone\": \"{{telefone_whatsapp}}\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-check-usuario",
+      "title": "Verificar Usuário Encontrado",
+      "graphCoordinates": { "x": 2100, "y": -200 },
+      "blocks": [
+        {
+          "id": "blk-check-found",
+          "outgoingEdgeId": "edge-nao-cadastrado",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-found",
+              "outgoingEdgeId": "edge-to-menu",
+              "content": {
+                "comparisons": [
+                  { "id": "cmp-found", "variableId": "var-user-found", "comparisonOperator": "Equal to", "value": "true" }
+                ]
+              }
+            },
+            {
+              "id": "item-found-by-id",
+              "outgoingEdgeId": "edge-to-menu",
+              "content": {
+                "comparisons": [
+                  { "id": "cmp-found-id", "variableId": "var-user-id", "comparisonOperator": "Not equal to", "value": "" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-nao-cadastrado",
+      "title": "ETAPA 3 — Não Cadastrado",
+      "graphCoordinates": { "x": 2100, "y": 200 },
+      "blocks": [
+        {
+          "id": "blk-nao-cadastrado-msg",
+          "outgoingEdgeId": "edge-nao-cadastrado-to-comercial",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "❌ Não encontramos seu cadastro em nossa base." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Para ter acesso ao suporte técnico, solicite ao gestor do seu projeto que cadastre seu usuário no GLPI." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Enquanto isso, posso te ajudar com informações comerciais! 😊" }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-menu",
+      "title": "ETAPA 4 — Menu Principal",
+      "graphCoordinates": { "x": 2500, "y": -500 },
+      "blocks": [
+        {
+          "id": "blk-menu-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Olá {{user_name}}! Como posso ajudar?" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 📝 Abrir chamado" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Ver meus chamados" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ 🔍 Consultar status de um chamado" }] },
+              { "type": "p", "children": [{ "text": "4️⃣ 💬 Falar com atendente" }] },
+              { "type": "p", "children": [{ "text": "5️⃣ 🚀 Comercial" }] },
+              { "type": "p", "children": [{ "text": "6️⃣ ❌ Encerrar" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-menu-input",
+          "outgoingEdgeId": "edge-menu-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Digite a opção (1-6)", "button": "Enviar" },
+            "variableId": "var-opcao-menu"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-menu-check",
+      "title": "Verificar Opção Menu",
+      "graphCoordinates": { "x": 2900, "y": -500 },
+      "blocks": [
+        {
+          "id": "blk-menu-cond",
+          "outgoingEdgeId": "edge-menu-invalida",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-abrir",
+              "outgoingEdgeId": "edge-to-abrir-tipo",
+              "content": { "comparisons": [{ "id": "c1", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "1" }] }
+            },
+            {
+              "id": "item-meus",
+              "outgoingEdgeId": "edge-to-meus-chamados",
+              "content": { "comparisons": [{ "id": "c2", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "2" }] }
+            },
+            {
+              "id": "item-consultar",
+              "outgoingEdgeId": "edge-to-consultar",
+              "content": { "comparisons": [{ "id": "c3", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "3" }] }
+            },
+            {
+              "id": "item-atendente",
+              "outgoingEdgeId": "edge-to-atendente",
+              "content": { "comparisons": [{ "id": "c4", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "4" }] }
+            },
+            {
+              "id": "item-comercial-menu",
+              "outgoingEdgeId": "edge-to-comercial",
+              "content": { "comparisons": [{ "id": "c5", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "5" }] }
+            },
+            {
+              "id": "item-encerrar-menu",
+              "outgoingEdgeId": "edge-to-encerrar",
+              "content": { "comparisons": [{ "id": "c6", "variableId": "var-opcao-menu", "comparisonOperator": "Equal to", "value": "6" }] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-menu-invalida",
+      "title": "Opção Inválida (Menu)",
+      "graphCoordinates": { "x": 2900, "y": -100 },
+      "blocks": [
+        {
+          "id": "blk-menu-invalida-msg",
+          "outgoingEdgeId": "edge-menu-invalida-retry",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "❌ Opção inválida. Por favor, digite um número de 1 a 6." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-menu-invalida-retry",
+      "title": "Voltar ao Menu",
+      "graphCoordinates": { "x": 3200, "y": -100 },
+      "blocks": [
+        { "id": "blk-menu-invalida-retry", "type": "Jump", "options": { "groupId": "grp-menu", "blockId": "blk-menu-msg" } }
+      ]
+    },
+    {
+      "id": "grp-abrir-tipo",
+      "title": "OP1 — Tipo do Chamado",
+      "graphCoordinates": { "x": 3400, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-abrir-tipo-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Qual o tipo do atendimento?" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 🔧 Incidente — Algo parou de funcionar" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Solicitação — Preciso de algo novo" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-abrir-tipo-input",
+          "outgoingEdgeId": "edge-tipo-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "1 ou 2", "button": "Enviar" },
+            "variableId": "var-tipo-chamado"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-tipo-check",
+      "title": "Verificar Tipo",
+      "graphCoordinates": { "x": 3800, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-tipo-cond",
+          "outgoingEdgeId": "edge-tipo-invalida",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-tipo-ok",
+              "outgoingEdgeId": "edge-to-urgencia",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  { "id": "ct1", "variableId": "var-tipo-chamado", "comparisonOperator": "Equal to", "value": "1" },
+                  { "id": "ct2", "variableId": "var-tipo-chamado", "comparisonOperator": "Equal to", "value": "2" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-tipo-invalida",
+      "title": "Tipo Inválido",
+      "graphCoordinates": { "x": 3800, "y": -600 },
+      "blocks": [
+        {
+          "id": "blk-tipo-invalida-msg",
+          "outgoingEdgeId": "edge-tipo-retry",
+          "type": "text",
+          "content": { "richText": [{ "type": "p", "children": [{ "text": "❌ Opção inválida. Digite 1 (Incidente) ou 2 (Solicitação)." }] }] }
+        }
+      ]
+    },
+    {
+      "id": "grp-tipo-retry",
+      "title": "Voltar Tipo",
+      "graphCoordinates": { "x": 4100, "y": -600 },
+      "blocks": [
+        { "id": "blk-tipo-retry", "type": "Jump", "options": { "groupId": "grp-abrir-tipo", "blockId": "blk-abrir-tipo-msg" } }
+      ]
+    },
+    {
+      "id": "grp-urgencia",
+      "title": "OP1 — Urgência",
+      "graphCoordinates": { "x": 4200, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-urgencia-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Qual a urgência?" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 🔴 Alta" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 🟡 Média" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ 🟢 Baixa" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-urgencia-input",
+          "outgoingEdgeId": "edge-urgencia-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "1, 2 ou 3", "button": "Enviar" },
+            "variableId": "var-urgencia-input"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-urgencia-check",
+      "title": "Verificar Urgência",
+      "graphCoordinates": { "x": 4600, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-urgencia-cond",
+          "outgoingEdgeId": "edge-urgencia-invalida",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-urg-ok",
+              "outgoingEdgeId": "edge-to-set-urgencia",
+              "content": {
+                "logicalOperator": "OR",
+                "comparisons": [
+                  { "id": "cu1", "variableId": "var-urgencia-input", "comparisonOperator": "Equal to", "value": "1" },
+                  { "id": "cu2", "variableId": "var-urgencia-input", "comparisonOperator": "Equal to", "value": "2" },
+                  { "id": "cu3", "variableId": "var-urgencia-input", "comparisonOperator": "Equal to", "value": "3" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-urgencia-invalida",
+      "title": "Urgência Inválida",
+      "graphCoordinates": { "x": 4600, "y": -550 },
+      "blocks": [
+        {
+          "id": "blk-urg-inv-msg",
+          "outgoingEdgeId": "edge-urg-retry",
+          "type": "text",
+          "content": { "richText": [{ "type": "p", "children": [{ "text": "❌ Opção inválida. Digite 1 (Alta), 2 (Média) ou 3 (Baixa)." }] }] }
+        }
+      ]
+    },
+    {
+      "id": "grp-urg-retry",
+      "title": "Voltar Urgência",
+      "graphCoordinates": { "x": 4900, "y": -550 },
+      "blocks": [
+        { "id": "blk-urg-retry", "type": "Jump", "options": { "groupId": "grp-urgencia", "blockId": "blk-urgencia-msg" } }
+      ]
+    },
+    {
+      "id": "grp-set-urgencia",
+      "title": "Mapear Urgência → GLPI",
+      "graphCoordinates": { "x": 5000, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-set-urgencia",
+          "outgoingEdgeId": "edge-to-titulo",
+          "type": "Set variable",
+          "options": {
+            "variableId": "var-urgencia",
+            "expressionToEvaluate": "if ({{urgencia_input}} === '1') return 2; if ({{urgencia_input}} === '2') return 3; return 4;",
+            "isCode": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-titulo",
+      "title": "OP1 — Título do Chamado",
+      "graphCoordinates": { "x": 5400, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-titulo-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Descreva o problema em uma frase curta (será o título do chamado):" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-titulo-input",
+          "outgoingEdgeId": "edge-to-descricao",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Ex: Impressora do 2° andar não imprime", "button": "Enviar" },
+            "variableId": "var-titulo"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-descricao",
+      "title": "OP1 — Descrição do Chamado",
+      "graphCoordinates": { "x": 5800, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-desc-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Agora descreva com mais detalhes o que está acontecendo:" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-desc-input",
+          "outgoingEdgeId": "edge-to-confirmacao",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Descreva com detalhes...", "button": "Enviar" },
+            "variableId": "var-descricao",
+            "isLong": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-confirmacao",
+      "title": "OP1 — Confirmação",
+      "graphCoordinates": { "x": 6200, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-confirm-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "📋 Resumo do chamado:" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "📌 Título: {{titulo_chamado}}" }] },
+              { "type": "p", "children": [{ "text": "📝 Descrição: {{descricao_chamado}}" }] },
+              { "type": "p", "children": [{ "text": "🏷️ Tipo: {{tipo_chamado}}" }] },
+              { "type": "p", "children": [{ "text": "⚡ Urgência: {{urgencia}}" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ ✅ Confirmar" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ ❌ Cancelar" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-confirm-input",
+          "outgoingEdgeId": "edge-confirm-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "1 ou 2", "button": "Enviar" },
+            "variableId": "var-confirmacao"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-confirm-check",
+      "title": "Verificar Confirmação",
+      "graphCoordinates": { "x": 6600, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-confirm-cond",
+          "outgoingEdgeId": "edge-cancelado",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-confirmado",
+              "outgoingEdgeId": "edge-to-aguarde",
+              "content": {
+                "comparisons": [
+                  { "id": "cc1", "variableId": "var-confirmacao", "comparisonOperator": "Equal to", "value": "1" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-cancelado",
+      "title": "Chamado Cancelado",
+      "graphCoordinates": { "x": 6600, "y": -550 },
+      "blocks": [
+        {
+          "id": "blk-cancelado-msg",
+          "outgoingEdgeId": "edge-cancelado-to-menu",
+          "type": "text",
+          "content": { "richText": [{ "type": "p", "children": [{ "text": "❌ Chamado cancelado. Voltando ao menu..." }] }] }
+        }
+      ]
+    },
+    {
+      "id": "grp-cancelado-retry",
+      "title": "Voltar Menu (cancelado)",
+      "graphCoordinates": { "x": 6900, "y": -550 },
+      "blocks": [
+        { "id": "blk-cancelado-retry", "type": "Jump", "options": { "groupId": "grp-menu", "blockId": "blk-menu-msg" } }
+      ]
+    },
+    {
+      "id": "grp-aguarde",
+      "title": "OP1 — Aguarde...",
+      "graphCoordinates": { "x": 7000, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-aguarde-msg",
+          "outgoingEdgeId": "edge-to-criar-ticket",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "⏳ Aguarde enquanto abrimos seu chamado..." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-criar-ticket",
+      "title": "OP1 — Criar Ticket (HTTP)",
+      "graphCoordinates": { "x": 7400, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-criar-ticket-http",
+          "outgoingEdgeId": "edge-to-ticket-sucesso",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-tid", "variableId": "var-ticket-id", "bodyPath": "ticket_id" },
+              { "id": "map-tmsg", "variableId": "var-ticket-msg", "bodyPath": "message" },
+              { "id": "map-tsucesso", "variableId": "var-ticket-sucesso", "bodyPath": "success" },
+              { "id": "map-tqueued", "variableId": "var-ticket-queued", "bodyPath": "queued" }
+            ],
+            "isAdvancedConfig": true,
+            "isCustomBody": true,
+            "webhook": {
+              "method": "POST",
+              "url": "{{proxy_url}}/ticket",
+              "headers": [
+                { "id": "ht1", "key": "Content-Type", "value": "application/json" },
+                { "id": "ht2", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ],
+              "body": "{\"nome\":\"{{titulo_chamado}}\",\"descricao\":\"{{descricao_chamado}}\",\"tipo\":{{tipo_chamado}},\"urgencia\":{{urgencia}},\"categoria_id\":0,\"user_id\":{{user_id}},\"telefone\":\"\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-ticket-sucesso",
+      "title": "OP1 — Chamado Criado ✅",
+      "graphCoordinates": { "x": 7800, "y": -900 },
+      "blocks": [
+        {
+          "id": "blk-ticket-sucesso-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "✅ Chamado #{{ticket_id}} aberto com sucesso!" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Acompanhe pelo painel do GLPI ou digite 2 no menu para ver seus chamados." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Qualquer dúvida pode nos contactar. Até logo! 👋" }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-meus-chamados",
+      "title": "OP2 — Ver Meus Chamados (HTTP)",
+      "graphCoordinates": { "x": 3400, "y": -400 },
+      "blocks": [
+        {
+          "id": "blk-meus-chamados-http",
+          "outgoingEdgeId": "edge-to-meus-result",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-tickets", "variableId": "var-meus-tickets", "bodyPath": "tickets" },
+              { "id": "map-total", "variableId": "var-meus-total", "bodyPath": "total" }
+            ],
+            "isAdvancedConfig": true,
+            "webhook": {
+              "method": "GET",
+              "url": "{{proxy_url}}/user/{{user_id}}/tickets",
+              "headers": [
+                { "id": "hm1", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-meus-result",
+      "title": "OP2 — Resultado Meus Chamados",
+      "graphCoordinates": { "x": 3800, "y": -400 },
+      "blocks": [
+        {
+          "id": "blk-meus-result-msg",
+          "outgoingEdgeId": "edge-meus-to-menu",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "📋 Seus chamados recentes ({{meus_total}} encontrados):" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "{{meus_tickets}}" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Voltando ao menu..." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-meus-to-menu",
+      "title": "Voltar Menu (meus chamados)",
+      "graphCoordinates": { "x": 4200, "y": -400 },
+      "blocks": [
+        { "id": "blk-meus-to-menu", "type": "Jump", "options": { "groupId": "grp-menu", "blockId": "blk-menu-msg" } }
+      ]
+    },
+    {
+      "id": "grp-consultar",
+      "title": "OP3 — Consultar Status",
+      "graphCoordinates": { "x": 3400, "y": 0 },
+      "blocks": [
+        {
+          "id": "blk-consultar-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Informe o número do chamado (ex: 123):" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-consultar-input",
+          "outgoingEdgeId": "edge-to-consultar-http",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Número do chamado", "button": "Consultar" },
+            "variableId": "var-ticket-consulta-id"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-consultar-http",
+      "title": "OP3 — Consultar HTTP",
+      "graphCoordinates": { "x": 3800, "y": 0 },
+      "blocks": [
+        {
+          "id": "blk-consultar-http",
+          "outgoingEdgeId": "edge-to-consultar-result",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-tinfo", "variableId": "var-ticket-info", "bodyPath": "ticket" },
+              { "id": "map-tsuc", "variableId": "var-consulta-sucesso", "bodyPath": "success" }
+            ],
+            "isAdvancedConfig": true,
+            "webhook": {
+              "method": "GET",
+              "url": "{{proxy_url}}/ticket/{{ticket_consulta_id}}",
+              "headers": [
+                { "id": "hc1", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-consultar-result",
+      "title": "OP3 — Resultado Consulta",
+      "graphCoordinates": { "x": 4200, "y": 0 },
+      "blocks": [
+        {
+          "id": "blk-consultar-result-msg",
+          "outgoingEdgeId": "edge-consulta-to-menu",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "🎫 Chamado #{{ticket_consulta_id}}" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "{{ticket_info}}" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Voltando ao menu..." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-consulta-to-menu",
+      "title": "Voltar Menu (consulta)",
+      "graphCoordinates": { "x": 4600, "y": 0 },
+      "blocks": [
+        { "id": "blk-consulta-to-menu", "type": "Jump", "options": { "groupId": "grp-menu", "blockId": "blk-menu-msg" } }
+      ]
+    },
+    {
+      "id": "grp-atendente",
+      "title": "OP4 — Falar com Atendente",
+      "graphCoordinates": { "x": 3400, "y": 400 },
+      "blocks": [
+        {
+          "id": "blk-atendente-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Vou encaminhar você para um analista de suporte." }] },
+              { "type": "p", "children": [{ "text": "Um analista entrará em contato em breve." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Protocolo de identificação: {{user_id}}" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Horário de atendimento: Seg-Sex, 8h às 18h." }] },
+              { "type": "p", "children": [{ "text": "Fora do horário, utilize a opção 'Abrir Chamado' pelo bot." }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-comercial",
+      "title": "COMERCIAL — Menu",
+      "graphCoordinates": { "x": 1300, "y": 400 },
+      "blocks": [
+        {
+          "id": "blk-comercial-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "🚀 Área Comercial da Oud Tecnologia!" }] },
+              { "type": "p", "children": [{ "text": "Como posso te ajudar?" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 🏷️ Ver nossos produtos" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 💰 Solicitar orçamento" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ 📅 Agendar uma reunião" }] },
+              { "type": "p", "children": [{ "text": "4️⃣ ↩️ Voltar" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-comercial-input",
+          "outgoingEdgeId": "edge-comercial-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Digite 1 a 4", "button": "Enviar" },
+            "variableId": "var-opcao-comercial"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-comercial-check",
+      "title": "Verificar Comercial",
+      "graphCoordinates": { "x": 1700, "y": 400 },
+      "blocks": [
+        {
+          "id": "blk-comercial-cond",
+          "outgoingEdgeId": "edge-comercial-invalida",
+          "type": "Condition",
+          "items": [
+            {
+              "id": "item-produtos",
+              "outgoingEdgeId": "edge-to-produtos",
+              "content": { "comparisons": [{ "id": "cp1", "variableId": "var-opcao-comercial", "comparisonOperator": "Equal to", "value": "1" }] }
+            },
+            {
+              "id": "item-orcamento",
+              "outgoingEdgeId": "edge-to-orcamento",
+              "content": { "comparisons": [{ "id": "cp2", "variableId": "var-opcao-comercial", "comparisonOperator": "Equal to", "value": "2" }] }
+            },
+            {
+              "id": "item-reuniao",
+              "outgoingEdgeId": "edge-to-reuniao",
+              "content": { "comparisons": [{ "id": "cp3", "variableId": "var-opcao-comercial", "comparisonOperator": "Equal to", "value": "3" }] }
+            },
+            {
+              "id": "item-voltar-com",
+              "outgoingEdgeId": "edge-to-triagem-voltar",
+              "content": { "comparisons": [{ "id": "cp4", "variableId": "var-opcao-comercial", "comparisonOperator": "Equal to", "value": "4" }] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-comercial-invalida",
+      "title": "Comercial Inválido",
+      "graphCoordinates": { "x": 1700, "y": 700 },
+      "blocks": [
+        {
+          "id": "blk-com-inv-msg",
+          "outgoingEdgeId": "edge-com-retry",
+          "type": "text",
+          "content": { "richText": [{ "type": "p", "children": [{ "text": "❌ Opção inválida. Digite de 1 a 4." }] }] }
+        }
+      ]
+    },
+    {
+      "id": "grp-com-retry",
+      "title": "Voltar Comercial",
+      "graphCoordinates": { "x": 2000, "y": 700 },
+      "blocks": [
+        { "id": "blk-com-retry", "type": "Jump", "options": { "groupId": "grp-comercial", "blockId": "blk-comercial-msg" } }
+      ]
+    },
+    {
+      "id": "grp-triagem-voltar",
+      "title": "Voltar à Triagem",
+      "graphCoordinates": { "x": 2100, "y": 500 },
+      "blocks": [
+        { "id": "blk-triagem-voltar", "type": "Jump", "options": { "groupId": "grp-triagem", "blockId": "blk-saudacao" } }
+      ]
+    },
+    {
+      "id": "grp-produtos",
+      "title": "COMERCIAL — Nossos Serviços",
+      "graphCoordinates": { "x": 2100, "y": 800 },
+      "blocks": [
+        {
+          "id": "blk-produtos-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "🖥️ Conheça nossas soluções!" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 📊 Governança & Inteligência de Dados" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 🤖 Inovação com IA & Automação" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ 💻 Soluções Customizadas de Software" }] },
+              { "type": "p", "children": [{ "text": "4️⃣ 🎓 OUD Academy — Capacitação" }] },
+              { "type": "p", "children": [{ "text": "5️⃣ ↩️ Voltar ao menu comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-produtos-input",
+          "outgoingEdgeId": "edge-produtos-to-check",
+          "type": "text input",
+          "options": {
+            "labels": { "placeholder": "Digite 1 a 5", "button": "Enviar" },
+            "variableId": "var-opcao-vertical"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-produtos-check",
+      "title": "Verificar Vertical",
+      "graphCoordinates": { "x": 2500, "y": 800 },
+      "blocks": [
+        {
+          "id": "blk-produtos-cond",
+          "outgoingEdgeId": "edge-produtos-inv",
+          "type": "Condition",
+          "items": [
+            { "id": "item-vert-1", "outgoingEdgeId": "edge-to-vert-1", "content": { "comparisons": [{ "id": "cv1", "variableId": "var-opcao-vertical", "comparisonOperator": "Equal to", "value": "1" }] } },
+            { "id": "item-vert-2", "outgoingEdgeId": "edge-to-vert-2", "content": { "comparisons": [{ "id": "cv2", "variableId": "var-opcao-vertical", "comparisonOperator": "Equal to", "value": "2" }] } },
+            { "id": "item-vert-3", "outgoingEdgeId": "edge-to-vert-3", "content": { "comparisons": [{ "id": "cv3", "variableId": "var-opcao-vertical", "comparisonOperator": "Equal to", "value": "3" }] } },
+            { "id": "item-vert-4", "outgoingEdgeId": "edge-to-vert-4", "content": { "comparisons": [{ "id": "cv4", "variableId": "var-opcao-vertical", "comparisonOperator": "Equal to", "value": "4" }] } },
+            { "id": "item-vert-back", "outgoingEdgeId": "edge-vert-to-com", "content": { "comparisons": [{ "id": "cv5", "variableId": "var-opcao-vertical", "comparisonOperator": "Equal to", "value": "5" }] } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-produtos-inv",
+      "title": "Vertical Inválida",
+      "graphCoordinates": { "x": 2500, "y": 1050 },
+      "blocks": [
+        { "id": "blk-prods-inv-msg", "outgoingEdgeId": "edge-prods-retry", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "❌ Opção inválida. Digite de 1 a 5." }] }] } }
+      ]
+    },
+    {
+      "id": "grp-produtos-retry",
+      "title": "Voltar Serviços",
+      "graphCoordinates": { "x": 2800, "y": 1050 },
+      "blocks": [
+        { "id": "blk-prods-retry", "type": "Jump", "options": { "groupId": "grp-produtos", "blockId": "blk-produtos-msg" } }
+      ]
+    },
+    {
+      "id": "grp-vert-1",
+      "title": "Governança & Inteligência de Dados",
+      "graphCoordinates": { "x": 2900, "y": 600 },
+      "blocks": [
+        {
+          "id": "blk-vert-1-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "📊 *Governança & Inteligência de Dados*" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Construa a base sólida do seu negócio. Segurança e tranquilidade na gestão dos seus dados." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Gestão e Monitoramento de Banco de Dados*" }] },
+              { "type": "p", "children": [{ "text": "Estabilidade, desempenho e segurança 24/7. Prevenção de falhas, otimização de performance e dados sempre disponíveis." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Data Warehouse & Data Lake*" }] },
+              { "type": "p", "children": [{ "text": "Centralize todos os dados da empresa para análises estratégicas. Visão 360° do negócio e preparação para Big Data." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Portal Power BI Embed*" }] },
+              { "type": "p", "children": [{ "text": "Democratize relatórios Power BI com redução de até 87% nos custos de licenciamento. Acesso simplificado e escalável." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "━━━━━━━━━━━━━━━━━" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 💰 Solicitar orçamento" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Ver outra área" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ ↩️ Voltar ao menu comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-vert-1-input",
+          "outgoingEdgeId": "edge-vert-1-to-action",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Digite 1 a 3", "button": "Enviar" }, "variableId": "var-opcao-vert-action" }
+        }
+      ]
+    },
+    {
+      "id": "grp-vert-2",
+      "title": "Inovação com IA & Automação",
+      "graphCoordinates": { "x": 2900, "y": 900 },
+      "blocks": [
+        {
+          "id": "blk-vert-2-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "🤖 *Inovação com IA & Automação*" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "A informação que você precisa, onde você estiver. O futuro da gestão na palma da sua mão." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Nicky — Assistente Virtual de Vendas*" }] },
+              { "type": "p", "children": [{ "text": "Pergunte sobre vendas via WhatsApp ou navegador e receba respostas imediatas com gráficos interativos. Dados em tempo real no seu bolso." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *MATIA — Assistente Jurídico*" }] },
+              { "type": "p", "children": [{ "text": "Pesquise legislações estaduais e federais, leia documentos, faça resumos e gere petições em minutos — tudo via WhatsApp ou web." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Hyper Reports — Bot de Relatórios*" }] },
+              { "type": "p", "children": [{ "text": "Todos os relatórios da empresa no seu WhatsApp. Nossa IA busca dados de qualquer fonte e entrega em tempo real, sem instalar apps." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "━━━━━━━━━━━━━━━━━" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 💰 Solicitar orçamento" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Ver outra área" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ ↩️ Voltar ao menu comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-vert-2-input",
+          "outgoingEdgeId": "edge-vert-2-to-action",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Digite 1 a 3", "button": "Enviar" }, "variableId": "var-opcao-vert-action" }
+        }
+      ]
+    },
+    {
+      "id": "grp-vert-3",
+      "title": "Soluções Customizadas de Software",
+      "graphCoordinates": { "x": 2900, "y": 1200 },
+      "blocks": [
+        {
+          "id": "blk-vert-3-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "💻 *Soluções Customizadas de Software*" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "Transforme suas ideias em soluções digitais. Seu negócio, seu software, sua regra." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Desenvolvimento de Sistemas e Apps*" }] },
+              { "type": "p", "children": [{ "text": "Soluções sob medida: CRM, ERP, gestão de projetos, apps mobile — do planejamento à implementação. Software que cresce com sua empresa." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Websites e Portais*" }] },
+              { "type": "p", "children": [{ "text": "Sites institucionais e portais interativos com design moderno e responsivo. Fortaleça sua marca e credibilidade no mercado." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Integração de Sistemas*" }] },
+              { "type": "p", "children": [{ "text": "Conectamos seus softwares existentes para que a informação flua de maneira unificada, sem erros e sem retrabalho." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "━━━━━━━━━━━━━━━━━" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 💰 Solicitar orçamento" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Ver outra área" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ ↩️ Voltar ao menu comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-vert-3-input",
+          "outgoingEdgeId": "edge-vert-3-to-action",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Digite 1 a 3", "button": "Enviar" }, "variableId": "var-opcao-vert-action" }
+        }
+      ]
+    },
+    {
+      "id": "grp-vert-4",
+      "title": "OUD Academy — Capacitação",
+      "graphCoordinates": { "x": 2900, "y": 1500 },
+      "blocks": [
+        {
+          "id": "blk-vert-4-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "🎓 *OUD Academy — Capacitação e Inovação*" }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "O maior ativo do seu negócio são as pessoas. Capacite sua equipe para liderar a transformação digital." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Treinamentos & Workshops*" }] },
+              { "type": "p", "children": [{ "text": "Capacitação prática em BI, Power BI, análise de dados, Data Lake e nossas soluções. Conhecimento que se converte em resultados imediatos." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "🔹 *Mentoria Técnica e Estratégica*" }] },
+              { "type": "p", "children": [{ "text": "Programas individuais ou em grupo com profissionais experientes da OUD. Aprofunde conhecimento em dados, IA e gestão de tecnologia." }] },
+              { "type": "p", "children": [{ "text": "" }] },
+              { "type": "p", "children": [{ "text": "━━━━━━━━━━━━━━━━━" }] },
+              { "type": "p", "children": [{ "text": "1️⃣ 💰 Solicitar orçamento" }] },
+              { "type": "p", "children": [{ "text": "2️⃣ 📋 Ver outra área" }] },
+              { "type": "p", "children": [{ "text": "3️⃣ ↩️ Voltar ao menu comercial" }] }
+            ]
+          }
+        },
+        {
+          "id": "blk-vert-4-input",
+          "outgoingEdgeId": "edge-vert-4-to-action",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Digite 1 a 3", "button": "Enviar" }, "variableId": "var-opcao-vert-action" }
+        }
+      ]
+    },
+    {
+      "id": "grp-vert-action",
+      "title": "Ação Pós-Serviço",
+      "graphCoordinates": { "x": 3300, "y": 800 },
+      "blocks": [
+        {
+          "id": "blk-vert-action-cond",
+          "outgoingEdgeId": "edge-vert-action-default",
+          "type": "Condition",
+          "items": [
+            { "id": "item-action-orc", "outgoingEdgeId": "edge-vert-to-orc", "content": { "comparisons": [{ "id": "ca1", "variableId": "var-opcao-vert-action", "comparisonOperator": "Equal to", "value": "1" }] } },
+            { "id": "item-action-areas", "outgoingEdgeId": "edge-vert-to-areas", "content": { "comparisons": [{ "id": "ca2", "variableId": "var-opcao-vert-action", "comparisonOperator": "Equal to", "value": "2" }] } },
+            { "id": "item-action-voltar", "outgoingEdgeId": "edge-vert-to-com-back", "content": { "comparisons": [{ "id": "ca3", "variableId": "var-opcao-vert-action", "comparisonOperator": "Equal to", "value": "3" }] } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grp-vert-to-areas",
+      "title": "Voltar Serviços (ação)",
+      "graphCoordinates": { "x": 3600, "y": 600 },
+      "blocks": [
+        { "id": "blk-vert-to-areas", "type": "Jump", "options": { "groupId": "grp-produtos", "blockId": "blk-produtos-msg" } }
+      ]
+    },
+    {
+      "id": "grp-vert-to-com-back",
+      "title": "Voltar Comercial (ação)",
+      "graphCoordinates": { "x": 3600, "y": 900 },
+      "blocks": [
+        { "id": "blk-vert-to-com-back", "type": "Jump", "options": { "groupId": "grp-comercial", "blockId": "blk-comercial-msg" } }
+      ]
+    },
+    {
+      "id": "grp-orcamento",
+      "title": "COMERCIAL — Orçamento",
+      "graphCoordinates": { "x": 2100, "y": 1200 },
+      "blocks": [
+        { "id": "blk-orc-nome-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "💰 Vamos montar um orçamento para você!" }] }, { "type": "p", "children": [{ "text": "Qual seu nome completo?" }] }] } },
+        { "id": "blk-orc-nome-input", "type": "text input", "options": { "labels": { "placeholder": "Seu nome", "button": "Enviar" }, "variableId": "var-lead-nome" } },
+        { "id": "blk-orc-empresa-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual o nome da sua empresa?" }] }] } },
+        { "id": "blk-orc-empresa-input", "type": "text input", "options": { "labels": { "placeholder": "Empresa", "button": "Enviar" }, "variableId": "var-lead-empresa" } },
+        { "id": "blk-orc-email-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual seu email de contato?" }] }] } },
+        { "id": "blk-orc-email-input", "type": "text input", "options": { "labels": { "placeholder": "email@empresa.com", "button": "Enviar" }, "variableId": "var-lead-email" } },
+        { "id": "blk-orc-tel-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual seu telefone? (com DDD)" }] }] } },
+        { "id": "blk-orc-tel-input", "type": "text input", "options": { "labels": { "placeholder": "(65) 99999-9999", "button": "Enviar" }, "variableId": "var-lead-telefone" } },
+        { "id": "blk-orc-servico-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual serviço você tem interesse?" }] }, { "type": "p", "children": [{ "text": "" }] }, { "type": "p", "children": [{ "text": "1️⃣ Governança & Inteligência de Dados" }] }, { "type": "p", "children": [{ "text": "2️⃣ IA & Automação (Nicky, MATIA, Hyper Reports)" }] }, { "type": "p", "children": [{ "text": "3️⃣ Soluções de Software (Sistemas, Sites, Integrações)" }] }, { "type": "p", "children": [{ "text": "4️⃣ OUD Academy (Treinamentos e Mentoria)" }] }, { "type": "p", "children": [{ "text": "5️⃣ Outro" }] }] } },
+        { "id": "blk-orc-servico-input", "type": "text input", "options": { "labels": { "placeholder": "Digite 1 a 5", "button": "Enviar" }, "variableId": "var-lead-servico" } },
+        { "id": "blk-orc-detalhe-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Algum detalhe ou observação? (digite 'não' para pular)" }] }] } },
+        {
+          "id": "blk-orc-detalhe-input",
+          "outgoingEdgeId": "edge-to-orc-http",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Detalhes...", "button": "Enviar" }, "variableId": "var-lead-detalhes" }
+        }
+      ]
+    },
+    {
+      "id": "grp-orc-http",
+      "title": "COMERCIAL — Enviar Orçamento (HTTP)",
+      "graphCoordinates": { "x": 2500, "y": 1200 },
+      "blocks": [
+        {
+          "id": "blk-orc-http",
+          "outgoingEdgeId": "edge-to-orc-result",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-orc-ok", "variableId": "var-lead-sucesso", "bodyPath": "success" }
+            ],
+            "isAdvancedConfig": true,
+            "isCustomBody": true,
+            "webhook": {
+              "method": "POST",
+              "url": "{{proxy_url}}/comercial/lead",
+              "headers": [
+                { "id": "ho1", "key": "Content-Type", "value": "application/json" },
+                { "id": "ho2", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ],
+              "body": "{\"tipo\":\"orcamento\",\"nome\":\"{{lead_nome}}\",\"empresa\":\"{{lead_empresa}}\",\"email\":\"{{lead_email}}\",\"telefone\":\"{{lead_telefone}}\",\"servico\":\"{{lead_servico}}\",\"detalhes\":\"{{lead_detalhes}}\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-orc-result",
+      "title": "COMERCIAL — Orçamento Enviado",
+      "graphCoordinates": { "x": 2900, "y": 1200 },
+      "blocks": [
+        {
+          "id": "blk-orc-result-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "✅ Solicitação de orçamento enviada com sucesso!" }] },
+              { "type": "p", "children": [{ "text": "Um especialista entrará em contato em breve. Obrigado! 😊" }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-reuniao",
+      "title": "COMERCIAL — Reunião",
+      "graphCoordinates": { "x": 2100, "y": 1700 },
+      "blocks": [
+        { "id": "blk-reun-nome-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "📅 Vamos agendar uma reunião!" }] }, { "type": "p", "children": [{ "text": "Qual seu nome completo?" }] }] } },
+        { "id": "blk-reun-nome-input", "type": "text input", "options": { "labels": { "placeholder": "Seu nome", "button": "Enviar" }, "variableId": "var-reun-nome" } },
+        { "id": "blk-reun-empresa-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual o nome da sua empresa?" }] }] } },
+        { "id": "blk-reun-empresa-input", "type": "text input", "options": { "labels": { "placeholder": "Empresa", "button": "Enviar" }, "variableId": "var-reun-empresa" } },
+        { "id": "blk-reun-email-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual seu email de contato?" }] }] } },
+        { "id": "blk-reun-email-input", "type": "text input", "options": { "labels": { "placeholder": "email@empresa.com", "button": "Enviar" }, "variableId": "var-reun-email" } },
+        { "id": "blk-reun-assunto-msg", "type": "text", "content": { "richText": [{ "type": "p", "children": [{ "text": "Qual o assunto da reunião?" }] }] } },
+        {
+          "id": "blk-reun-assunto-input",
+          "outgoingEdgeId": "edge-to-reun-http",
+          "type": "text input",
+          "options": { "labels": { "placeholder": "Assunto...", "button": "Enviar" }, "variableId": "var-reun-assunto" }
+        }
+      ]
+    },
+    {
+      "id": "grp-reun-http",
+      "title": "COMERCIAL — Enviar Reunião (HTTP)",
+      "graphCoordinates": { "x": 2500, "y": 1700 },
+      "blocks": [
+        {
+          "id": "blk-reun-http",
+          "outgoingEdgeId": "edge-to-reun-result",
+          "type": "Webhook",
+          "options": {
+            "variablesForTest": [],
+            "responseVariableMapping": [
+              { "id": "map-reun-ok", "variableId": "var-reun-sucesso", "bodyPath": "success" }
+            ],
+            "isAdvancedConfig": true,
+            "isCustomBody": true,
+            "webhook": {
+              "method": "POST",
+              "url": "{{proxy_url}}/comercial/lead",
+              "headers": [
+                { "id": "hr1", "key": "Content-Type", "value": "application/json" },
+                { "id": "hr2", "key": "x-proxy-key", "value": "{{proxy_secret}}" }
+              ],
+              "body": "{\"tipo\":\"reuniao\",\"nome\":\"{{reun_nome}}\",\"empresa\":\"{{reun_empresa}}\",\"email\":\"{{reun_email}}\",\"telefone\":\"\",\"detalhes\":\"{{reun_assunto}}\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-reun-result",
+      "title": "COMERCIAL — Reunião Agendada",
+      "graphCoordinates": { "x": 2900, "y": 1700 },
+      "blocks": [
+        {
+          "id": "blk-reun-result-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "✅ Solicitação de reunião enviada com sucesso!" }] },
+              { "type": "p", "children": [{ "text": "Um especialista entrará em contato para confirmar a data. Obrigado! 😊" }] }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "grp-encerrar",
+      "title": "Encerrar",
+      "graphCoordinates": { "x": 3400, "y": 600 },
+      "blocks": [
+        {
+          "id": "blk-encerrar-msg",
+          "type": "text",
+          "content": {
+            "richText": [
+              { "type": "p", "children": [{ "text": "Obrigado por usar o atendimento da Oud Tecnologia! 👋" }] },
+              { "type": "p", "children": [{ "text": "Se precisar de algo, é só mandar uma mensagem." }] },
+              { "type": "p", "children": [{ "text": "Até mais!" }] }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    { "id": "edge-start-to-vars", "from": { "eventId": "evt-start" }, "to": { "groupId": "grp-vars" } },
+    { "id": "edge-vars-to-triagem", "from": { "blockId": "blk-set-proxy-url" }, "to": { "groupId": "grp-triagem" } },
+    { "id": "edge-triagem-to-check", "from": { "blockId": "blk-triagem-input" }, "to": { "groupId": "grp-triagem-check" } },
+    { "id": "edge-to-identificacao", "from": { "blockId": "blk-triagem-cond", "itemId": "item-cliente" }, "to": { "groupId": "grp-identificacao" } },
+    { "id": "edge-to-comercial", "from": { "blockId": "blk-triagem-cond", "itemId": "item-comercial" }, "to": { "groupId": "grp-comercial" } },
+    { "id": "edge-triagem-invalida", "from": { "blockId": "blk-triagem-cond" }, "to": { "groupId": "grp-triagem-invalida" } },
+    { "id": "edge-triagem-retry", "from": { "blockId": "blk-triagem-invalida-msg" }, "to": { "groupId": "grp-triagem-retry" } },
+    { "id": "edge-email-to-busca", "from": { "blockId": "blk-email-input" }, "to": { "groupId": "grp-busca-usuario" } },
+    { "id": "edge-busca-to-check", "from": { "blockId": "blk-busca-http" }, "to": { "groupId": "grp-check-usuario" } },
+    { "id": "edge-to-menu", "from": { "blockId": "blk-check-found", "itemId": "item-found" }, "to": { "groupId": "grp-menu" } },
+    { "id": "edge-nao-cadastrado", "from": { "blockId": "blk-check-found" }, "to": { "groupId": "grp-nao-cadastrado" } },
+    { "id": "edge-nao-cadastrado-to-comercial", "from": { "blockId": "blk-nao-cadastrado-msg" }, "to": { "groupId": "grp-comercial" } },
+    { "id": "edge-menu-to-check", "from": { "blockId": "blk-menu-input" }, "to": { "groupId": "grp-menu-check" } },
+    { "id": "edge-to-abrir-tipo", "from": { "blockId": "blk-menu-cond", "itemId": "item-abrir" }, "to": { "groupId": "grp-abrir-tipo" } },
+    { "id": "edge-to-meus-chamados", "from": { "blockId": "blk-menu-cond", "itemId": "item-meus" }, "to": { "groupId": "grp-meus-chamados" } },
+    { "id": "edge-to-consultar", "from": { "blockId": "blk-menu-cond", "itemId": "item-consultar" }, "to": { "groupId": "grp-consultar" } },
+    { "id": "edge-to-atendente", "from": { "blockId": "blk-menu-cond", "itemId": "item-atendente" }, "to": { "groupId": "grp-atendente" } },
+    { "id": "edge-to-encerrar", "from": { "blockId": "blk-menu-cond", "itemId": "item-encerrar-menu" }, "to": { "groupId": "grp-encerrar" } },
+    { "id": "edge-menu-invalida", "from": { "blockId": "blk-menu-cond" }, "to": { "groupId": "grp-menu-invalida" } },
+    { "id": "edge-menu-invalida-retry", "from": { "blockId": "blk-menu-invalida-msg" }, "to": { "groupId": "grp-menu-invalida-retry" } },
+    { "id": "edge-to-abrir-tipo-from-comercial", "from": { "blockId": "blk-menu-cond", "itemId": "item-comercial-menu" }, "to": { "groupId": "grp-comercial" } },
+    { "id": "edge-tipo-to-check", "from": { "blockId": "blk-abrir-tipo-input" }, "to": { "groupId": "grp-tipo-check" } },
+    { "id": "edge-to-urgencia", "from": { "blockId": "blk-tipo-cond", "itemId": "item-tipo-ok" }, "to": { "groupId": "grp-urgencia" } },
+    { "id": "edge-tipo-invalida", "from": { "blockId": "blk-tipo-cond" }, "to": { "groupId": "grp-tipo-invalida" } },
+    { "id": "edge-tipo-retry", "from": { "blockId": "blk-tipo-invalida-msg" }, "to": { "groupId": "grp-tipo-retry" } },
+    { "id": "edge-urgencia-to-check", "from": { "blockId": "blk-urgencia-input" }, "to": { "groupId": "grp-urgencia-check" } },
+    { "id": "edge-to-set-urgencia", "from": { "blockId": "blk-urgencia-cond", "itemId": "item-urg-ok" }, "to": { "groupId": "grp-set-urgencia" } },
+    { "id": "edge-urgencia-invalida", "from": { "blockId": "blk-urgencia-cond" }, "to": { "groupId": "grp-urgencia-invalida" } },
+    { "id": "edge-urg-retry", "from": { "blockId": "blk-urg-inv-msg" }, "to": { "groupId": "grp-urg-retry" } },
+    { "id": "edge-to-titulo", "from": { "blockId": "blk-set-urgencia" }, "to": { "groupId": "grp-titulo" } },
+    { "id": "edge-to-descricao", "from": { "blockId": "blk-titulo-input" }, "to": { "groupId": "grp-descricao" } },
+    { "id": "edge-to-confirmacao", "from": { "blockId": "blk-desc-input" }, "to": { "groupId": "grp-confirmacao" } },
+    { "id": "edge-confirm-to-check", "from": { "blockId": "blk-confirm-input" }, "to": { "groupId": "grp-confirm-check" } },
+    { "id": "edge-to-aguarde", "from": { "blockId": "blk-confirm-cond", "itemId": "item-confirmado" }, "to": { "groupId": "grp-aguarde" } },
+    { "id": "edge-cancelado", "from": { "blockId": "blk-confirm-cond" }, "to": { "groupId": "grp-cancelado" } },
+    { "id": "edge-cancelado-to-menu", "from": { "blockId": "blk-cancelado-msg" }, "to": { "groupId": "grp-cancelado-retry" } },
+    { "id": "edge-to-criar-ticket", "from": { "blockId": "blk-aguarde-msg" }, "to": { "groupId": "grp-criar-ticket" } },
+    { "id": "edge-to-ticket-sucesso", "from": { "blockId": "blk-criar-ticket-http" }, "to": { "groupId": "grp-ticket-sucesso" } },
+    { "id": "edge-to-meus-result", "from": { "blockId": "blk-meus-chamados-http" }, "to": { "groupId": "grp-meus-result" } },
+    { "id": "edge-meus-to-menu", "from": { "blockId": "blk-meus-result-msg" }, "to": { "groupId": "grp-meus-to-menu" } },
+    { "id": "edge-to-consultar-http", "from": { "blockId": "blk-consultar-input" }, "to": { "groupId": "grp-consultar-http" } },
+    { "id": "edge-to-consultar-result", "from": { "blockId": "blk-consultar-http" }, "to": { "groupId": "grp-consultar-result" } },
+    { "id": "edge-consulta-to-menu", "from": { "blockId": "blk-consultar-result-msg" }, "to": { "groupId": "grp-consulta-to-menu" } },
+    { "id": "edge-comercial-to-check", "from": { "blockId": "blk-comercial-input" }, "to": { "groupId": "grp-comercial-check" } },
+    { "id": "edge-to-produtos", "from": { "blockId": "blk-comercial-cond", "itemId": "item-produtos" }, "to": { "groupId": "grp-produtos" } },
+    { "id": "edge-to-orcamento", "from": { "blockId": "blk-comercial-cond", "itemId": "item-orcamento" }, "to": { "groupId": "grp-orcamento" } },
+    { "id": "edge-to-reuniao", "from": { "blockId": "blk-comercial-cond", "itemId": "item-reuniao" }, "to": { "groupId": "grp-reuniao" } },
+    { "id": "edge-to-triagem-voltar", "from": { "blockId": "blk-comercial-cond", "itemId": "item-voltar-com" }, "to": { "groupId": "grp-triagem-voltar" } },
+    { "id": "edge-comercial-invalida", "from": { "blockId": "blk-comercial-cond" }, "to": { "groupId": "grp-comercial-invalida" } },
+    { "id": "edge-com-retry", "from": { "blockId": "blk-com-inv-msg" }, "to": { "groupId": "grp-com-retry" } },
+    { "id": "edge-produtos-to-check", "from": { "blockId": "blk-produtos-input" }, "to": { "groupId": "grp-produtos-check" } },
+    { "id": "edge-to-vert-1", "from": { "blockId": "blk-produtos-cond", "itemId": "item-vert-1" }, "to": { "groupId": "grp-vert-1" } },
+    { "id": "edge-to-vert-2", "from": { "blockId": "blk-produtos-cond", "itemId": "item-vert-2" }, "to": { "groupId": "grp-vert-2" } },
+    { "id": "edge-to-vert-3", "from": { "blockId": "blk-produtos-cond", "itemId": "item-vert-3" }, "to": { "groupId": "grp-vert-3" } },
+    { "id": "edge-to-vert-4", "from": { "blockId": "blk-produtos-cond", "itemId": "item-vert-4" }, "to": { "groupId": "grp-vert-4" } },
+    { "id": "edge-vert-to-com", "from": { "blockId": "blk-produtos-cond", "itemId": "item-vert-back" }, "to": { "groupId": "grp-com-retry" } },
+    { "id": "edge-produtos-inv", "from": { "blockId": "blk-produtos-cond" }, "to": { "groupId": "grp-produtos-inv" } },
+    { "id": "edge-prods-retry", "from": { "blockId": "blk-prods-inv-msg" }, "to": { "groupId": "grp-produtos-retry" } },
+    { "id": "edge-vert-1-to-action", "from": { "blockId": "blk-vert-1-input" }, "to": { "groupId": "grp-vert-action" } },
+    { "id": "edge-vert-2-to-action", "from": { "blockId": "blk-vert-2-input" }, "to": { "groupId": "grp-vert-action" } },
+    { "id": "edge-vert-3-to-action", "from": { "blockId": "blk-vert-3-input" }, "to": { "groupId": "grp-vert-action" } },
+    { "id": "edge-vert-4-to-action", "from": { "blockId": "blk-vert-4-input" }, "to": { "groupId": "grp-vert-action" } },
+    { "id": "edge-vert-to-orc", "from": { "blockId": "blk-vert-action-cond", "itemId": "item-action-orc" }, "to": { "groupId": "grp-orcamento" } },
+    { "id": "edge-vert-to-areas", "from": { "blockId": "blk-vert-action-cond", "itemId": "item-action-areas" }, "to": { "groupId": "grp-vert-to-areas" } },
+    { "id": "edge-vert-to-com-back", "from": { "blockId": "blk-vert-action-cond", "itemId": "item-action-voltar" }, "to": { "groupId": "grp-vert-to-com-back" } },
+    { "id": "edge-vert-action-default", "from": { "blockId": "blk-vert-action-cond" }, "to": { "groupId": "grp-vert-to-areas" } },
+    { "id": "edge-to-orc-http", "from": { "blockId": "blk-orc-detalhe-input" }, "to": { "groupId": "grp-orc-http" } },
+    { "id": "edge-to-orc-result", "from": { "blockId": "blk-orc-http" }, "to": { "groupId": "grp-orc-result" } },
+    { "id": "edge-to-reun-http", "from": { "blockId": "blk-reun-assunto-input" }, "to": { "groupId": "grp-reun-http" } },
+    { "id": "edge-to-reun-result", "from": { "blockId": "blk-reun-http" }, "to": { "groupId": "grp-reun-result" } }
+  ],
+  "variables": [
+    { "id": "var-proxy-secret", "name": "proxy_secret", "isSessionVariable": false },
+    { "id": "var-proxy-url", "name": "proxy_url", "isSessionVariable": false },
+    { "id": "var-contact-name", "name": "contato_nome", "isSessionVariable": false },
+    { "id": "var-opcao-triagem", "name": "opcao_triagem", "isSessionVariable": false },
+    { "id": "var-email", "name": "email_identificacao", "isSessionVariable": false },
+    { "id": "var-whatsapp-phone", "name": "telefone_whatsapp", "isSessionVariable": true },
+    { "id": "var-user-found", "name": "user_found", "isSessionVariable": true },
+    { "id": "var-user-id", "name": "user_id", "isSessionVariable": true },
+    { "id": "var-user-name", "name": "user_name", "isSessionVariable": true },
+    { "id": "var-user-email", "name": "user_email", "isSessionVariable": true },
+    { "id": "var-opcao-menu", "name": "opcao_menu", "isSessionVariable": false },
+    { "id": "var-tipo-chamado", "name": "tipo_chamado", "isSessionVariable": false },
+    { "id": "var-urgencia-input", "name": "urgencia_input", "isSessionVariable": false },
+    { "id": "var-urgencia", "name": "urgencia", "isSessionVariable": false },
+    { "id": "var-titulo", "name": "titulo_chamado", "isSessionVariable": false },
+    { "id": "var-descricao", "name": "descricao_chamado", "isSessionVariable": false },
+    { "id": "var-confirmacao", "name": "confirmacao", "isSessionVariable": false },
+    { "id": "var-ticket-id", "name": "ticket_id", "isSessionVariable": true },
+    { "id": "var-ticket-msg", "name": "ticket_msg", "isSessionVariable": true },
+    { "id": "var-ticket-sucesso", "name": "ticket_sucesso", "isSessionVariable": true },
+    { "id": "var-ticket-queued", "name": "ticket_queued", "isSessionVariable": true },
+    { "id": "var-meus-tickets", "name": "meus_tickets", "isSessionVariable": true },
+    { "id": "var-meus-total", "name": "meus_total", "isSessionVariable": true },
+    { "id": "var-ticket-consulta-id", "name": "ticket_consulta_id", "isSessionVariable": false },
+    { "id": "var-ticket-info", "name": "ticket_info", "isSessionVariable": true },
+    { "id": "var-consulta-sucesso", "name": "consulta_sucesso", "isSessionVariable": true },
+    { "id": "var-opcao-comercial", "name": "opcao_comercial", "isSessionVariable": false },
+    { "id": "var-lead-nome", "name": "lead_nome", "isSessionVariable": false },
+    { "id": "var-lead-empresa", "name": "lead_empresa", "isSessionVariable": false },
+    { "id": "var-lead-email", "name": "lead_email", "isSessionVariable": false },
+    { "id": "var-lead-telefone", "name": "lead_telefone", "isSessionVariable": false },
+    { "id": "var-lead-detalhes", "name": "lead_detalhes", "isSessionVariable": false },
+    { "id": "var-lead-sucesso", "name": "lead_sucesso", "isSessionVariable": true },
+    { "id": "var-reun-nome", "name": "reun_nome", "isSessionVariable": false },
+    { "id": "var-reun-empresa", "name": "reun_empresa", "isSessionVariable": false },
+    { "id": "var-reun-email", "name": "reun_email", "isSessionVariable": false },
+    { "id": "var-reun-assunto", "name": "reun_assunto", "isSessionVariable": false },
+    { "id": "var-reun-sucesso", "name": "reun_sucesso", "isSessionVariable": true },
+    { "id": "var-opcao-vertical", "name": "opcao_vertical", "isSessionVariable": false },
+    { "id": "var-opcao-vert-action", "name": "opcao_vert_action", "isSessionVariable": false },
+    { "id": "var-lead-servico", "name": "lead_servico", "isSessionVariable": false }
+  ],
+  "theme": {},
+  "selectedThemeTemplateId": null,
+  "settings": {},
+  "createdAt": "2026-03-11T14:00:00.000Z",
+  "updatedAt": "2026-03-11T14:00:00.000Z",
+  "folderId": null,
+  "publicId": "atendimento-oud-tecnologia",
+  "customDomain": null,
+  "resultsTablePreferences": null,
+  "isArchived": false,
+  "isClosed": false,
+  "whatsAppCredentialsId": null,
+  "riskLevel": null
+}
